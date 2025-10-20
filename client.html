@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LangGraph WebSocket Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 800px;
+            width: 100%;
+            padding: 40px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .status {
+            padding: 12px 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.connecting {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        .chat-container {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 20px;
+            height: 400px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            padding: 12px 16px;
+            border-radius: 10px;
+            max-width: 80%;
+            word-wrap: break-word;
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.user {
+            background: #667eea;
+            color: white;
+            margin-left: auto;
+            text-align: right;
+        }
+
+        .message.assistant {
+            background: white;
+            color: #333;
+            border: 1px solid #e0e0e0;
+        }
+
+        .message.system {
+            background: #fff3cd;
+            color: #856404;
+            font-size: 13px;
+            font-style: italic;
+            max-width: 100%;
+            text-align: center;
+        }
+
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            max-width: 100%;
+        }
+
+        .input-container {
+            display: flex;
+            gap: 10px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 15px 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            padding: 15px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .quick-actions {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .quick-btn {
+            padding: 8px 16px;
+            background: #f0f0f0;
+            border: 1px solid #d0d0d0;
+            border-radius: 8px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .quick-btn:hover {
+            background: #e0e0e0;
+            transform: translateY(-1px);
+        }
+
+        .streaming-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #667eea;
+            border-radius: 50%;
+            margin-left: 5px;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.3;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>LangGraph WebSocket Test</h1>
+        <p class="subtitle">Testing Meta Llama streaming with LangGraph</p>
+
+        <div id="status" class="status connecting">
+            Connecting to server...
+        </div>
+
+        <div class="quick-actions">
+            <button class="quick-btn" onclick="sendQuickMessage('Hello!')">Say Hello</button>
+            <button class="quick-btn" onclick="sendQuickMessage('Tell me a short joke')">Tell a Joke</button>
+            <button class="quick-btn" onclick="sendQuickMessage('What is the capital of France?')">Trivia</button>
+            <button class="quick-btn" onclick="clearChat()">Clear Chat</button>
+        </div>
+
+        <div id="chatContainer" class="chat-container"></div>
+
+        <div class="input-container">
+            <input
+                type="text"
+                id="messageInput"
+                placeholder="Type your message here..."
+                onkeypress="handleKeyPress(event)"
+            />
+            <button id="sendBtn" onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        let ws;
+        let currentAssistantMessage = null;
+        let isStreaming = false;
+
+        function connect() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
+
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                updateStatus('connected', 'Connected to server');
+                document.getElementById('sendBtn').disabled = false;
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                handleServerMessage(data);
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket disconnected');
+                updateStatus('disconnected', 'Disconnected from server');
+                document.getElementById('sendBtn').disabled = true;
+
+                // Attempt to reconnect after 3 seconds
+                setTimeout(connect, 3000);
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                addMessage('error', 'WebSocket error occurred');
+            };
+        }
+
+        function updateStatus(state, message) {
+            const statusEl = document.getElementById('status');
+            statusEl.className = `status ${state}`;
+            statusEl.textContent = message;
+        }
+
+        function handleServerMessage(data) {
+            switch (data.type) {
+                case 'start':
+                    isStreaming = true;
+                    currentAssistantMessage = addMessage('assistant', '');
+                    currentAssistantMessage.innerHTML = '<span class="streaming-indicator"></span>';
+                    break;
+
+                case 'token':
+                    if (currentAssistantMessage) {
+                        // Remove streaming indicator if it exists
+                        const indicator = currentAssistantMessage.querySelector('.streaming-indicator');
+                        if (indicator) {
+                            indicator.remove();
+                        }
+                        // Append the new token
+                        currentAssistantMessage.textContent += data.content;
+                    }
+                    break;
+
+                case 'end':
+                    isStreaming = false;
+                    currentAssistantMessage = null;
+                    console.log('Stream complete');
+                    break;
+
+                case 'error':
+                    isStreaming = false;
+                    addMessage('error', `Error: ${data.content}`);
+                    currentAssistantMessage = null;
+                    break;
+
+                default:
+                    console.log('Unknown message type:', data.type);
+            }
+        }
+
+        function addMessage(type, content) {
+            const chatContainer = document.getElementById('chatContainer');
+            const messageEl = document.createElement('div');
+            messageEl.className = `message ${type}`;
+            messageEl.textContent = content;
+            chatContainer.appendChild(messageEl);
+
+            // Scroll to bottom
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+
+            return messageEl;
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+
+            if (!message || !ws || ws.readyState !== WebSocket.OPEN) {
+                return;
+            }
+
+            // Display user message
+            addMessage('user', message);
+
+            // Send to server
+            ws.send(JSON.stringify({ message: message }));
+
+            // Clear input
+            input.value = '';
+        }
+
+        function sendQuickMessage(message) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                return;
+            }
+
+            // Display user message
+            addMessage('user', message);
+
+            // Send to server
+            ws.send(JSON.stringify({ message: message }));
+        }
+
+        function clearChat() {
+            document.getElementById('chatContainer').innerHTML = '';
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        // Connect on page load
+        connect();
+    </script>
+</body>
+</html>
