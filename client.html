@@ -211,17 +211,17 @@
 </head>
 <body>
     <div class="container">
-        <h1>LangGraph WebSocket Test</h1>
-        <p class="subtitle">Testing Meta Llama streaming with LangGraph</p>
+        <h1>Website Screenshot Analyzer</h1>
+        <p class="subtitle">AI-powered website analysis using Llama Vision + Steel.dev</p>
 
         <div id="status" class="status connecting">
             Connecting to server...
         </div>
 
         <div class="quick-actions">
-            <button class="quick-btn" onclick="sendQuickMessage('Hello!')">Say Hello</button>
-            <button class="quick-btn" onclick="sendQuickMessage('Tell me a short joke')">Tell a Joke</button>
-            <button class="quick-btn" onclick="sendQuickMessage('What is the capital of France?')">Trivia</button>
+            <button class="quick-btn" onclick="sendQuickURL('https://github.com')">GitHub</button>
+            <button class="quick-btn" onclick="sendQuickURL('https://news.ycombinator.com')">Hacker News</button>
+            <button class="quick-btn" onclick="sendQuickURL('https://www.anthropic.com')">Anthropic</button>
             <button class="quick-btn" onclick="clearChat()">Clear Chat</button>
         </div>
 
@@ -230,11 +230,11 @@
         <div class="input-container">
             <input
                 type="text"
-                id="messageInput"
-                placeholder="Type your message here..."
+                id="urlInput"
+                placeholder="Enter a website URL (e.g., https://example.com)..."
                 onkeypress="handleKeyPress(event)"
             />
-            <button id="sendBtn" onclick="sendMessage()">Send</button>
+            <button id="sendBtn" onclick="sendMessage()">Analyze</button>
         </div>
     </div>
 
@@ -283,6 +283,11 @@
 
         function handleServerMessage(data) {
             switch (data.type) {
+                case 'status':
+                    // Show status updates (capturing screenshot, etc.)
+                    addMessage('system', data.content);
+                    break;
+
                 case 'start':
                     isStreaming = true;
                     currentAssistantMessage = addMessage('assistant', '');
@@ -304,12 +309,12 @@
                 case 'end':
                     isStreaming = false;
                     currentAssistantMessage = null;
-                    console.log('Stream complete');
+                    console.log('Analysis complete');
                     break;
 
                 case 'error':
                     isStreaming = false;
-                    addMessage('error', `Error: ${data.content}`);
+                    addMessage('error', data.content);
                     currentAssistantMessage = null;
                     break;
 
@@ -332,33 +337,33 @@
         }
 
         function sendMessage() {
-            const input = document.getElementById('messageInput');
-            const message = input.value.trim();
+            const input = document.getElementById('urlInput');
+            const url = input.value.trim();
 
-            if (!message || !ws || ws.readyState !== WebSocket.OPEN) {
+            if (!url || !ws || ws.readyState !== WebSocket.OPEN) {
                 return;
             }
 
-            // Display user message
-            addMessage('user', message);
+            // Display user URL
+            addMessage('user', url);
 
             // Send to server
-            ws.send(JSON.stringify({ message: message }));
+            ws.send(JSON.stringify({ url: url }));
 
             // Clear input
             input.value = '';
         }
 
-        function sendQuickMessage(message) {
+        function sendQuickURL(url) {
             if (!ws || ws.readyState !== WebSocket.OPEN) {
                 return;
             }
 
-            // Display user message
-            addMessage('user', message);
+            // Display user URL
+            addMessage('user', url);
 
             // Send to server
-            ws.send(JSON.stringify({ message: message }));
+            ws.send(JSON.stringify({ url: url }));
         }
 
         function clearChat() {

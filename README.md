@@ -1,11 +1,12 @@
-# LangGraph WebSocket Streaming Test
+# Website Screenshot Analyzer
 
-A simple project to test real-time streaming between a frontend and a LangGraph agent using WebSockets, powered by Meta Llama.
+An AI-powered website screenshot analyzer using LangGraph, Meta Llama Vision, and Steel.dev browser automation. Enter a URL, get an AI-generated description of the website with real-time streaming.
 
 ## Features
 
 - Real-time WebSocket communication
-- LangGraph agent with Meta Llama (Llama-3.3-8B-Instruct)
+- Automated screenshot capture with Steel.dev browser API
+- Vision-enabled AI analysis with Meta Llama (Llama-4-Maverick-17B-128E-Instruct-FP8)
 - Streaming AI responses token-by-token
 - Simple, clean HTML/CSS/JS frontend
 - Python backend with FastAPI
@@ -27,6 +28,7 @@ A simple project to test real-time streaming between a frontend and a LangGraph 
 - Python 3.10 or higher
 - [uv](https://github.com/astral-sh/uv) - Fast Python package installer
 - Meta Llama API key (from [llama.com](https://www.llama.com/))
+- Steel.dev API key (from [steel.dev](https://steel.dev/))
 
 ## Setup
 
@@ -62,13 +64,16 @@ Create a `.env` file:
 cp .env.example .env
 ```
 
-Edit `.env` and add your Meta Llama API key:
+Edit `.env` and add your API keys:
 
 ```
-LLAMA_API_KEY=your_actual_api_key_here
+LLAMA_API_KEY=your_actual_llama_api_key_here
+STEEL_API_KEY=your_actual_steel_api_key_here
 ```
 
-You can get your API key from [llama.com](https://www.llama.com/).
+Get your API keys:
+- Meta Llama API key from [llama.com](https://www.llama.com/)
+- Steel.dev API key from [steel.dev](https://steel.dev/)
 
 ## Running the Application
 
@@ -93,7 +98,7 @@ python server.py
 
 The server will start on `http://localhost:8000`
 
-### Access the test client
+### Access the analyzer
 
 Open your browser and navigate to:
 
@@ -101,41 +106,51 @@ Open your browser and navigate to:
 http://localhost:8000
 ```
 
-You should see the LangGraph WebSocket Test interface.
+You should see the Website Screenshot Analyzer interface.
 
 ## Usage
 
 1. The client automatically connects to the WebSocket server
-2. Type a message in the input field or use the quick action buttons
-3. Click "Send" or press Enter
-4. Watch the AI response stream in real-time!
+2. Enter a website URL in the input field or use the quick action buttons
+3. Click "Analyze" or press Enter
+4. Watch as the system:
+   - Captures a screenshot of the website
+   - Analyzes it with AI vision
+   - Streams the description in real-time!
 
-### Quick Test Messages
+### Quick Test URLs
 
-- "Hello!" - Simple greeting
-- "Tell me a short joke" - Get a joke from the AI
-- "What is the capital of France?" - Trivia question
+- `https://github.com` - GitHub homepage
+- `https://news.ycombinator.com` - Hacker News
+- `https://www.anthropic.com` - Anthropic's website
 
 ## How It Works
 
 ### Backend (server.py)
 
 1. **FastAPI Server**: Handles HTTP and WebSocket connections
-2. **LangGraph Agent**: Creates a simple conversational agent using:
-   - `ChatOpenAI` with custom base URL for Meta Llama API
-   - `StateGraph` for managing conversation state
+2. **Steel.dev Integration**: Browser automation for screenshot capture
+   - Creates browser sessions
+   - Captures high-quality screenshots of websites
+   - Returns base64-encoded images
+3. **LangGraph Agent**: Vision-enabled AI agent using:
+   - `ChatOpenAI` with Meta Llama Vision model
+   - `StateGraph` for managing analysis workflow
    - Streaming enabled for real-time responses
-3. **WebSocket Handler**:
-   - Receives messages from the frontend
-   - Triggers the LangGraph agent
-   - Streams responses back token-by-token
+4. **WebSocket Handler**:
+   - Receives URL from the frontend
+   - Validates URL format
+   - Captures screenshot via Steel.dev
+   - Sends screenshot + prompt to Llama Vision
+   - Streams AI analysis back token-by-token
 
 ### Frontend (client.html)
 
 1. **WebSocket Client**: Connects to the server
-2. **Message Display**: Shows user and AI messages
-3. **Streaming UI**: Displays tokens as they arrive
-4. **Auto-reconnect**: Automatically reconnects if connection drops
+2. **URL Input**: Accepts website URLs
+3. **Status Display**: Shows progress (capturing, analyzing)
+4. **Streaming UI**: Displays AI description as it's generated
+5. **Auto-reconnect**: Automatically reconnects if connection drops
 
 ## API Details
 
@@ -146,17 +161,25 @@ You should see the LangGraph WebSocket Test interface.
 **Message Format (Client → Server)**:
 ```json
 {
-  "message": "Your message here"
+  "url": "https://example.com"
 }
 ```
 
 **Message Format (Server → Client)**:
 
-Start of stream:
+Status update (capturing screenshot):
+```json
+{
+  "type": "status",
+  "content": "Capturing screenshot of https://example.com..."
+}
+```
+
+Start of analysis:
 ```json
 {
   "type": "start",
-  "content": "Processing your message..."
+  "content": "Analyzing website..."
 }
 ```
 
@@ -172,8 +195,8 @@ End of stream:
 ```json
 {
   "type": "end",
-  "content": "Stream complete",
-  "full_response": "The complete response"
+  "content": "Analysis complete",
+  "full_response": "The complete description"
 }
 ```
 
@@ -193,29 +216,45 @@ Edit `server.py` and modify the model name in `get_llama_model()`:
 
 ```python
 return ChatOpenAI(
-    model="Llama-3.3-8B-Instruct",  # Change this
+    model="Llama-4-Maverick-17B-128E-Instruct-FP8",  # Change to another vision model
     api_key=api_key,
     base_url="https://api.llama.com/compat/v1/",
     streaming=True,
 )
 ```
 
-### Modify the Agent Behavior
+### Customize the Analysis Prompt
 
-Edit the `create_agent()` function in `server.py` to add system prompts, tools, or more complex graph structures.
+Edit the prompt in the WebSocket handler (server.py, line ~182):
+
+```python
+"text": f"Please describe this website screenshot from {url}. Provide details about the layout, design, key elements, and what the website appears to be about."
+```
+
+Change this to customize what the AI looks for in screenshots.
+
+### Modify Screenshot Settings
+
+Edit the `capture_screenshot()` function to customize Steel.dev screenshot options (full page, viewport size, etc.).
 
 ### Customize the Frontend
 
-Edit `client.html` to change styling, add features, or modify the UI.
+Edit `client.html` to change styling, add features, or display the screenshot image alongside the analysis.
 
 ## Troubleshooting
 
-### "LLAMA_API_KEY environment variable is not set"
+### "LLAMA_API_KEY environment variable is not set" or "STEEL_API_KEY environment variable is not set"
 
 Make sure you have:
 1. Created a `.env` file
-2. Added your API key to it
+2. Added both API keys to it
 3. The `.env` file is in the same directory as `server.py`
+
+### "Failed to capture screenshot"
+
+- Verify your Steel.dev API key is correct
+- Check if you have credits/quota remaining in your Steel.dev account
+- Ensure the URL is accessible and properly formatted (must start with `http://` or `https://`)
 
 ### WebSocket connection fails
 
@@ -234,7 +273,8 @@ uv sync --reinstall
 
 - **langgraph**: Graph-based agent framework
 - **langchain**: LLM framework
-- **langchain-openai**: OpenAI integration for LangChain
+- **langchain-openai**: OpenAI integration for LangChain (supports vision models)
+- **steel-sdk**: Steel.dev browser automation SDK
 - **fastapi**: Modern web framework
 - **uvicorn**: ASGI server
 - **python-dotenv**: Environment variable management

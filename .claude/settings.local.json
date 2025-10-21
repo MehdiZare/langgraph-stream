@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:docs.steel.dev)",
+      "Bash(uv sync)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
