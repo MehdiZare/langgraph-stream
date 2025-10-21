@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LangGraph WebSocket Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -272,6 +273,145 @@
             color: #667eea;
             font-weight: 600;
         }
+
+        .message.screenshot {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 10px;
+            max-width: 90%;
+        }
+
+        .message.screenshot img {
+            width: 100%;
+            height: auto;
+            border-radius: 8px;
+            display: block;
+            animation: progressiveLoad 2.5s ease-out;
+        }
+
+        @keyframes progressiveLoad {
+            from {
+                clip-path: inset(0 0 100% 0);
+            }
+            to {
+                clip-path: inset(0 0 0 0);
+            }
+        }
+
+        .message.seo-recommendation {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border: 2px solid #667eea;
+            border-radius: 12px;
+            padding: 20px;
+            max-width: 95%;
+        }
+
+        .seo-analysis h3 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .ranking-badge {
+            background: #28a745;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .ranking-badge.not-ranked {
+            background: #ffc107;
+            color: #333;
+        }
+
+        .seo-section {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .seo-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .seo-section strong {
+            color: #667eea;
+            display: block;
+            margin-bottom: 10px;
+            font-size: 15px;
+        }
+
+        .seo-content {
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .seo-content p {
+            margin: 10px 0;
+        }
+
+        .seo-content p:first-child {
+            margin-top: 0;
+        }
+
+        .seo-content p:last-child {
+            margin-bottom: 0;
+        }
+
+        .seo-content ul,
+        .seo-content ol {
+            margin: 10px 0;
+            padding-left: 25px;
+        }
+
+        .seo-content li {
+            margin: 5px 0;
+        }
+
+        .seo-content h1,
+        .seo-content h2,
+        .seo-content h3,
+        .seo-content h4 {
+            color: #667eea;
+            margin: 15px 0 10px 0;
+        }
+
+        .seo-content h1 { font-size: 1.4em; }
+        .seo-content h2 { font-size: 1.3em; }
+        .seo-content h3 { font-size: 1.2em; }
+        .seo-content h4 { font-size: 1.1em; }
+
+        .seo-content strong {
+            color: #333;
+            font-weight: 600;
+        }
+
+        .seo-content em {
+            font-style: italic;
+        }
+
+        .seo-content code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .seo-content blockquote {
+            border-left: 3px solid #667eea;
+            padding-left: 15px;
+            margin: 10px 0;
+            color: #666;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -364,6 +504,11 @@
                     addMessage('system', data.content);
                     break;
 
+                case 'screenshot':
+                    // Display the screenshot
+                    displayScreenshot(data.content);
+                    break;
+
                 case 'start':
                     isStreaming = true;
                     currentAssistantMessage = addMessage('assistant', '');
@@ -395,6 +540,11 @@
                     currentAssistantMessage = null;
                     break;
 
+                case 'seo_recommendation':
+                    // Display SEO recommendations
+                    displaySEORecommendation(data.seo);
+                    break;
+
                 case 'error':
                     isStreaming = false;
                     addMessage('error', data.content);
@@ -404,6 +554,20 @@
                 default:
                     console.log('Unknown message type:', data.type);
             }
+        }
+
+        function displayScreenshot(base64Image) {
+            const chatContainer = document.getElementById('chatContainer');
+
+            const screenshotEl = document.createElement('div');
+            screenshotEl.className = 'message screenshot';
+
+            screenshotEl.innerHTML = `
+                <img src="data:image/png;base64,${base64Image}" alt="Website Screenshot" />
+            `;
+
+            chatContainer.appendChild(screenshotEl);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
         function displayStructuredAnalysis(analysis) {
@@ -429,10 +593,51 @@
                             ${analysis.key_features.map(f => `<li>${f}</li>`).join('')}
                         </ul>
                     </div>
+                    <div class="analysis-field">
+                        <strong>Target Keywords:</strong> ${analysis.keywords.join(', ')}
+                    </div>
                 </div>
             `;
 
             chatContainer.appendChild(analysisEl);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function displaySEORecommendation(seo) {
+            const chatContainer = document.getElementById('chatContainer');
+
+            const seoEl = document.createElement('div');
+            seoEl.className = 'message seo-recommendation';
+
+            // Use marked.js for proper markdown rendering
+            const markdownToHtml = (text) => {
+                if (!text) return '';
+                return marked.parse(text);
+            };
+
+            const rankingBadge = seo.ranking_position
+                ? `<span class="ranking-badge">Ranked #${seo.ranking_position}</span>`
+                : `<span class="ranking-badge not-ranked">Not in Top 10</span>`;
+
+            seoEl.innerHTML = `
+                <div class="seo-analysis">
+                    <h3>SEO Analysis & Recommendations ${rankingBadge}</h3>
+                    <div class="seo-section">
+                        <strong>Findings</strong>
+                        <div class="seo-content">${markdownToHtml(seo.findings)}</div>
+                    </div>
+                    <div class="seo-section">
+                        <strong>Recommendations</strong>
+                        <div class="seo-content">${markdownToHtml(seo.recommendations)}</div>
+                    </div>
+                    <div class="seo-section">
+                        <strong>Require Attention</strong>
+                        <div class="seo-content">${markdownToHtml(seo.require_attention)}</div>
+                    </div>
+                </div>
+            `;
+
+            chatContainer.appendChild(seoEl);
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 

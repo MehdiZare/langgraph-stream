@@ -3,7 +3,8 @@
     "allow": [
       "WebSearch",
       "WebFetch(domain:docs.steel.dev)",
-      "Bash(uv sync)"
+      "Bash(uv sync)",
+      "Bash(pkill:*)"
     ],
     "deny": [],
     "ask": []

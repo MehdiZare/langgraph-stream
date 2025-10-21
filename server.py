@@ -19,6 +19,7 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from dotenv import load_dotenv
 from steel import Steel
 import httpx
+from serpapi import GoogleSearch
 
 # Load environment variables
 load_dotenv()
@@ -61,6 +62,27 @@ class WebsiteAnalysis(BaseModel):
         description="List of 3-5 notable features, UI elements, or characteristics observed",
         min_length=3,
         max_length=5
+    )
+
+    keywords: List[str] = Field(
+        description="Top 5 SEO keywords that best represent the page content and business focus",
+        min_length=5,
+        max_length=5
+    )
+
+class SEORecommendation(BaseModel):
+    """SEO analysis and recommendations based on competitive landscape"""
+
+    findings: str = Field(
+        description="Markdown-formatted findings about the website's SEO performance and competitive position. Write in a positive, constructive tone."
+    )
+
+    recommendations: str = Field(
+        description="Markdown-formatted actionable recommendations to improve SEO and competitiveness. Write in a positive, encouraging tone."
+    )
+
+    require_attention: str = Field(
+        description="Markdown-formatted items that require immediate attention or quick wins. Write in a positive, motivating tone."
     )
 
 # Cache configuration
@@ -283,6 +305,53 @@ async def capture_screenshot(url: str, websocket: WebSocket = None) -> str:
         else:
             raise Exception(f"Failed to capture screenshot: {error_detail}")
 
+# SerpAPI Integration
+def search_google(keywords: List[str]) -> List[dict]:
+    """
+    Search Google using SerpAPI with the given keywords
+    Returns top 10 organic search results
+    """
+    api_key = os.environ.get("SERPAPI_KEY")
+    if not api_key:
+        raise ValueError("SERPAPI_KEY environment variable is not set")
+
+    # Use the first keyword or join them for better search
+    search_query = keywords[0] if keywords else ""
+
+    params = {
+        "engine": "google_light",
+        "q": search_query,
+        "api_key": api_key,
+        "num": 10  # Get top 10 results
+    }
+
+    try:
+        search = GoogleSearch(params)
+        results = search.get_dict()
+        organic_results = results.get("organic_results", [])
+
+        # Return only the top 10 results with relevant fields
+        return organic_results[:10]
+    except Exception as e:
+        print(f"SerpAPI error: {e}")
+        # Return empty list on error to not break the flow
+        return []
+
+def find_url_ranking(url: str, organic_results: List[dict]) -> int | None:
+    """
+    Find the position of the given URL in the organic search results
+    Returns position (1-based) or None if not found
+    """
+    # Normalize the URL for comparison
+    normalized_url = normalize_url(url)
+
+    for idx, result in enumerate(organic_results, start=1):
+        result_url = result.get("link", "")
+        if normalized_url in normalize_url(result_url) or normalize_url(result_url) in normalized_url:
+            return idx
+
+    return None
+
 # Serve static files (for the HTML client)
 @app.get("/")
 async def get_client():
@@ -318,6 +387,22 @@ def get_llama_model_structured():
     # Use LangChain's with_structured_output for Pydantic model
     return model.with_structured_output(WebsiteAnalysis)
 
+def get_llama_model_seo():
+    """Get Llama model configured for SEO recommendation structured output"""
+    api_key = os.environ.get("LLAMA_API_KEY")
+    if not api_key:
+        raise ValueError("LLAMA_API_KEY environment variable is not set")
+
+    model = ChatOpenAI(
+        model="Llama-4-Maverick-17B-128E-Instruct-FP8",
+        api_key=api_key,
+        base_url="https://api.llama.com/compat/v1/",
+        streaming=False,  # Structured output doesn't stream
+    )
+
+    # Use LangChain's with_structured_output for Pydantic model
+    return model.with_structured_output(SEORecommendation)
+
 # Define the LangGraph agent
 def create_agent():
     """Create a simple conversational agent using LangGraph"""
@@ -336,6 +421,65 @@ def create_agent():
     graph_builder.add_edge("chatbot", END)
 
     return graph_builder.compile()
+
+async def analyze_seo(
+    url: str,
+    website_analysis: WebsiteAnalysis,
+    organic_results: List[dict],
+    ranking_position: int | None
+) -> SEORecommendation:
+    """
+    Analyze SEO performance and provide recommendations
+    """
+    seo_model = get_llama_model_seo()
+
+    # Build competitor information
+    competitors_info = ""
+    for idx, result in enumerate(organic_results[:5], start=1):
+        title = result.get("title", "N/A")
+        link = result.get("link", "N/A")
+        snippet = result.get("snippet", "N/A")
+        competitors_info += f"\n{idx}. **{title}**\n   URL: {link}\n   Snippet: {snippet}\n"
+
+    # Build ranking message
+    if ranking_position:
+        ranking_msg = f"Your website is currently ranked at position #{ranking_position} in the top 10 search results."
+    else:
+        ranking_msg = "Your website is not currently visible in the top 10 search results for these keywords."
+
+    # Construct the prompt
+    prompt = f"""You are an SEO expert analyzing a website's competitive position.
+
+**Website Being Analyzed:** {url}
+
+**Website Analysis:**
+- Type: {website_analysis.website_type}
+- Primary Goal: {website_analysis.primary_goal}
+- Description: {website_analysis.description}
+- Key Features: {', '.join(website_analysis.key_features)}
+- Target Keywords: {', '.join(website_analysis.keywords)}
+
+**Current Search Ranking:**
+{ranking_msg}
+
+**Top Competitors (from Google search for "{website_analysis.keywords[0]}"):**
+{competitors_info}
+
+Please provide a comprehensive SEO analysis with:
+1. **Findings**: Key observations about the website's current SEO position, competitive landscape, and opportunities
+2. **Recommendations**: Specific, actionable steps to improve SEO performance and competitiveness
+3. **Require Attention**: High-priority items or quick wins that should be addressed immediately
+
+IMPORTANT: Write everything in a positive, encouraging, and constructive tone. Focus on opportunities and growth potential rather than shortcomings. Use markdown formatting for better readability (bullet points, bold text, etc.).
+"""
+
+    # Create message
+    message = HumanMessage(content=prompt)
+
+    # Invoke the model
+    seo_recommendation = await asyncio.to_thread(seo_model.invoke, [message])
+
+    return seo_recommendation
 
 # WebSocket endpoint for streaming
 @app.websocket("/ws")
@@ -387,6 +531,12 @@ async def websocket_endpoint(websocket: WebSocket):
             try:
                 screenshot_base64 = await capture_screenshot(url, websocket)
                 print(f"Screenshot captured successfully for {url}")
+
+                # Send screenshot to frontend
+                await websocket.send_json({
+                    "type": "screenshot",
+                    "content": screenshot_base64
+                })
             except Exception as e:
                 print(f"Error capturing screenshot: {e}")
                 await websocket.send_json({
@@ -412,7 +562,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         content=[
                             {
                                 "type": "text",
-                                "text": f"Analyze this website screenshot from {url}. Identify the website type, primary business goal, provide a description, and list key features."
+                                "text": f"Analyze this website screenshot from {url}. Identify the website type, primary business goal, provide a description, list key features, and determine the top 5 SEO keywords that best represent this page."
                             },
                             {
                                 "type": "image_url",
@@ -434,7 +584,45 @@ async def websocket_endpoint(websocket: WebSocket):
                             "website_type": analysis_result.website_type,
                             "primary_goal": analysis_result.primary_goal,
                             "description": analysis_result.description,
-                            "key_features": analysis_result.key_features
+                            "key_features": analysis_result.key_features,
+                            "keywords": analysis_result.keywords
+                        }
+                    })
+
+                    # Send status update: Searching competitors
+                    await websocket.send_json({
+                        "type": "status",
+                        "content": "Searching Google for competitors..."
+                    })
+
+                    # Search Google with the keywords (run in background)
+                    organic_results = await asyncio.to_thread(search_google, analysis_result.keywords)
+
+                    # Find URL ranking
+                    ranking_position = find_url_ranking(url, organic_results)
+
+                    # Send status update: Analyzing SEO
+                    await websocket.send_json({
+                        "type": "status",
+                        "content": "Analyzing SEO and generating recommendations..."
+                    })
+
+                    # Run SEO analysis
+                    seo_result = await analyze_seo(
+                        url=url,
+                        website_analysis=analysis_result,
+                        organic_results=organic_results,
+                        ranking_position=ranking_position
+                    )
+
+                    # Send SEO recommendations
+                    await websocket.send_json({
+                        "type": "seo_recommendation",
+                        "seo": {
+                            "findings": seo_result.findings,
+                            "recommendations": seo_result.recommendations,
+                            "require_attention": seo_result.require_attention,
+                            "ranking_position": ranking_position
                         }
                     })
 
