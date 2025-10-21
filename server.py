@@ -4,13 +4,15 @@ import base64
 import hashlib
 import time
 import asyncio
-from typing import Annotated
+from typing import Annotated, List, Literal
 from pathlib import Path
 from urllib.parse import urlparse
+from pydantic import BaseModel, Field
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage
 from langgraph.graph import StateGraph, MessagesState, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -20,6 +22,46 @@ import httpx
 
 # Load environment variables
 load_dotenv()
+
+# Pydantic model for structured output
+class WebsiteAnalysis(BaseModel):
+    """Structured analysis of a website screenshot"""
+
+    website_type: Literal[
+        "E-commerce",
+        "SaaS/Software",
+        "Blog/Content",
+        "Portfolio",
+        "Corporate/Business",
+        "Landing Page",
+        "News/Media",
+        "Social Platform",
+        "Educational",
+        "Government",
+        "Other"
+    ] = Field(description="Primary category/type of the website")
+
+    primary_goal: Literal[
+        "Product Sales",
+        "Lead Generation",
+        "Information/Education",
+        "Brand Awareness",
+        "User Engagement",
+        "Content Distribution",
+        "Service Delivery",
+        "Community Building",
+        "Other"
+    ] = Field(description="Main business objective of the website")
+
+    description: str = Field(
+        description="Brief 2-3 sentence description of the website, its purpose, and visual design"
+    )
+
+    key_features: List[str] = Field(
+        description="List of 3-5 notable features, UI elements, or characteristics observed",
+        min_length=3,
+        max_length=5
+    )
 
 # Cache configuration
 CACHE_DIR = Path(".cache/screenshots")
@@ -260,6 +302,22 @@ def get_llama_model():
         streaming=True,
     )
 
+def get_llama_model_structured():
+    """Get Llama model configured for structured output"""
+    api_key = os.environ.get("LLAMA_API_KEY")
+    if not api_key:
+        raise ValueError("LLAMA_API_KEY environment variable is not set")
+
+    model = ChatOpenAI(
+        model="Llama-4-Maverick-17B-128E-Instruct-FP8",
+        api_key=api_key,
+        base_url="https://api.llama.com/compat/v1/",
+        streaming=False,  # Structured output doesn't stream
+    )
+
+    # Use LangChain's with_structured_output for Pydantic model
+    return model.with_structured_output(WebsiteAnalysis)
+
 # Define the LangGraph agent
 def create_agent():
     """Create a simple conversational agent using LangGraph"""
@@ -298,9 +356,11 @@ async def websocket_endpoint(websocket: WebSocket):
             try:
                 message_data = json.loads(data)
                 url = message_data.get("url", "")
+                mode = message_data.get("mode", "structured")  # Default to structured
             except json.JSONDecodeError:
                 # If it's not JSON, treat it as plain text URL
                 url = data.strip()
+                mode = "structured"
 
             if not url:
                 await websocket.send_json({
@@ -341,51 +401,93 @@ async def websocket_endpoint(websocket: WebSocket):
                 "content": "Analyzing website..."
             })
 
-            # Stream the agent's response
+            # Choose analysis mode
             try:
-                # Prepare multimodal input with screenshot
-                input_data = {
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": f"Please describe this website screenshot from {url}. Provide details about the layout, design, key elements, and what the website appears to be about."
-                                },
-                                {
-                                    "type": "image_url",
-                                    "image_url": {
-                                        "url": f"data:image/png;base64,{screenshot_base64}"
-                                    }
+                if mode == "structured":
+                    # Use structured output (no streaming, no LangGraph wrapper)
+                    structured_model = get_llama_model_structured()
+
+                    # Create the vision message directly
+                    message = HumanMessage(
+                        content=[
+                            {
+                                "type": "text",
+                                "text": f"Analyze this website screenshot from {url}. Identify the website type, primary business goal, provide a description, and list key features."
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/png;base64,{screenshot_base64}"
                                 }
-                            ]
+                            }
+                        ]
+                    )
+
+                    # Invoke the structured model directly (returns WebsiteAnalysis object)
+                    analysis_result = await asyncio.to_thread(structured_model.invoke, [message])
+
+                    # analysis_result is already a WebsiteAnalysis Pydantic model
+                    # Send structured result
+                    await websocket.send_json({
+                        "type": "structured",
+                        "analysis": {
+                            "website_type": analysis_result.website_type,
+                            "primary_goal": analysis_result.primary_goal,
+                            "description": analysis_result.description,
+                            "key_features": analysis_result.key_features
                         }
-                    ]
-                }
+                    })
 
-                # Stream the response
-                full_response = ""
-                async for event in agent.astream_events(input_data, version="v2"):
-                    kind = event["event"]
+                    # Send completion
+                    await websocket.send_json({
+                        "type": "end",
+                        "content": "Analysis complete"
+                    })
 
-                    # Handle different event types
-                    if kind == "on_chat_model_stream":
-                        content = event["data"]["chunk"].content
-                        if content:
-                            full_response += content
-                            # Send token to client
-                            await websocket.send_json({
-                                "type": "token",
-                                "content": content
-                            })
+                else:
+                    # Use original streaming mode
+                    input_data = {
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": f"Please describe this website screenshot from {url}. Provide details about the layout, design, key elements, and what the website appears to be about."
+                                    },
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": f"data:image/png;base64,{screenshot_base64}"
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    }
 
-                # Send completion signal
-                await websocket.send_json({
-                    "type": "end",
-                    "content": "Analysis complete",
-                    "full_response": full_response
-                })
+                    # Stream the response
+                    full_response = ""
+                    async for event in agent.astream_events(input_data, version="v2"):
+                        kind = event["event"]
+
+                        # Handle different event types
+                        if kind == "on_chat_model_stream":
+                            content = event["data"]["chunk"].content
+                            if content:
+                                full_response += content
+                                # Send token to client
+                                await websocket.send_json({
+                                    "type": "token",
+                                    "content": content
+                                })
+
+                    # Send completion signal
+                    await websocket.send_json({
+                        "type": "end",
+                        "content": "Stream complete",
+                        "full_response": full_response
+                    })
 
             except Exception as e:
                 print(f"Error during agent execution: {e}")

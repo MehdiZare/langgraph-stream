@@ -207,6 +207,71 @@
                 opacity: 0.3;
             }
         }
+
+        .message.structured {
+            background: white;
+            border: 2px solid #667eea;
+            border-radius: 12px;
+            padding: 20px;
+            max-width: 90%;
+        }
+
+        .structured-analysis {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .analysis-field {
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .analysis-field strong {
+            color: #667eea;
+            display: block;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .analysis-field ul {
+            margin: 10px 0 0 20px;
+            padding: 0;
+            list-style-type: disc;
+        }
+
+        .analysis-field li {
+            margin: 5px 0;
+            color: #333;
+        }
+
+        .mode-toggle {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            display: flex;
+            gap: 20px;
+        }
+
+        .mode-toggle label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .mode-toggle input[type="radio"] {
+            cursor: pointer;
+        }
+
+        .mode-toggle label:has(input:checked) {
+            color: #667eea;
+            font-weight: 600;
+        }
     </style>
 </head>
 <body>
@@ -216,6 +281,17 @@
 
         <div id="status" class="status connecting">
             Connecting to server...
+        </div>
+
+        <div class="mode-toggle">
+            <label>
+                <input type="radio" name="mode" value="structured" checked>
+                Structured Analysis
+            </label>
+            <label>
+                <input type="radio" name="mode" value="streaming">
+                Streaming Description
+            </label>
         </div>
 
         <div class="quick-actions">
@@ -312,6 +388,13 @@
                     console.log('Analysis complete');
                     break;
 
+                case 'structured':
+                    // Handle structured JSON response
+                    isStreaming = false;
+                    displayStructuredAnalysis(data.analysis);
+                    currentAssistantMessage = null;
+                    break;
+
                 case 'error':
                     isStreaming = false;
                     addMessage('error', data.content);
@@ -321,6 +404,36 @@
                 default:
                     console.log('Unknown message type:', data.type);
             }
+        }
+
+        function displayStructuredAnalysis(analysis) {
+            const chatContainer = document.getElementById('chatContainer');
+
+            const analysisEl = document.createElement('div');
+            analysisEl.className = 'message assistant structured';
+
+            analysisEl.innerHTML = `
+                <div class="structured-analysis">
+                    <div class="analysis-field">
+                        <strong>Website Type:</strong> ${analysis.website_type}
+                    </div>
+                    <div class="analysis-field">
+                        <strong>Primary Goal:</strong> ${analysis.primary_goal}
+                    </div>
+                    <div class="analysis-field">
+                        <strong>Description:</strong> ${analysis.description}
+                    </div>
+                    <div class="analysis-field">
+                        <strong>Key Features:</strong>
+                        <ul>
+                            ${analysis.key_features.map(f => `<li>${f}</li>`).join('')}
+                        </ul>
+                    </div>
+                </div>
+            `;
+
+            chatContainer.appendChild(analysisEl);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
         function addMessage(type, content) {
@@ -344,11 +457,14 @@
                 return;
             }
 
+            // Get selected mode
+            const mode = document.querySelector('input[name="mode"]:checked').value;
+
             // Display user URL
             addMessage('user', url);
 
-            // Send to server
-            ws.send(JSON.stringify({ url: url }));
+            // Send to server with mode
+            ws.send(JSON.stringify({ url: url, mode: mode }));
 
             // Clear input
             input.value = '';
@@ -359,11 +475,14 @@
                 return;
             }
 
+            // Get selected mode
+            const mode = document.querySelector('input[name="mode"]:checked').value;
+
             // Display user URL
             addMessage('user', url);
 
-            // Send to server
-            ws.send(JSON.stringify({ url: url }));
+            // Send to server with mode
+            ws.send(JSON.stringify({ url: url, mode: mode }));
         }
 
         function clearChat() {
