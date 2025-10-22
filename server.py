@@ -337,6 +337,38 @@ def search_google(keywords: List[str]) -> List[dict]:
         # Return empty list on error to not break the flow
         return []
 
+def search_bing(keywords: List[str]) -> List[dict]:
+    """
+    Search Bing using SerpAPI with the given keywords
+    Returns top 10 organic search results
+    """
+    api_key = os.environ.get("SERPAPI_KEY")
+    if not api_key:
+        raise ValueError("SERPAPI_KEY environment variable is not set")
+
+    # Use the first keyword or join them for better search
+    search_query = keywords[0] if keywords else ""
+
+    params = {
+        "engine": "bing",
+        "q": search_query,
+        "cc": "US",
+        "api_key": api_key,
+        "count": 10  # Get top 10 results
+    }
+
+    try:
+        search = GoogleSearch(params)
+        results = search.get_dict()
+        organic_results = results.get("organic_results", [])
+
+        # Return only the top 10 results with relevant fields
+        return organic_results[:10]
+    except Exception as e:
+        print(f"SerpAPI Bing error: {e}")
+        # Return empty list on error to not break the flow
+        return []
+
 def find_url_ranking(url: str, organic_results: List[dict]) -> int | None:
     """
     Find the position of the given URL in the organic search results
@@ -425,30 +457,39 @@ def create_agent():
 async def analyze_seo(
     url: str,
     website_analysis: WebsiteAnalysis,
-    organic_results: List[dict],
-    ranking_position: int | None
+    google_results: List[dict],
+    bing_results: List[dict],
+    google_ranking: int | None,
+    bing_ranking: int | None
 ) -> SEORecommendation:
     """
-    Analyze SEO performance and provide recommendations
+    Analyze SEO performance and provide recommendations from both Google and Bing
     """
     seo_model = get_llama_model_seo()
 
-    # Build competitor information
-    competitors_info = ""
-    for idx, result in enumerate(organic_results[:5], start=1):
+    # Build Google competitor information
+    google_competitors = ""
+    for idx, result in enumerate(google_results[:5], start=1):
         title = result.get("title", "N/A")
         link = result.get("link", "N/A")
         snippet = result.get("snippet", "N/A")
-        competitors_info += f"\n{idx}. **{title}**\n   URL: {link}\n   Snippet: {snippet}\n"
+        google_competitors += f"\n{idx}. **{title}**\n   URL: {link}\n   Snippet: {snippet}\n"
 
-    # Build ranking message
-    if ranking_position:
-        ranking_msg = f"Your website is currently ranked at position #{ranking_position} in the top 10 search results."
-    else:
-        ranking_msg = "Your website is not currently visible in the top 10 search results for these keywords."
+    # Build Bing competitor information
+    bing_competitors = ""
+    for idx, result in enumerate(bing_results[:5], start=1):
+        title = result.get("title", "N/A")
+        link = result.get("link", "N/A")
+        snippet = result.get("snippet", "N/A")
+        bing_competitors += f"\n{idx}. **{title}**\n   URL: {link}\n   Snippet: {snippet}\n"
+
+    # Build ranking message for both engines
+    google_rank_msg = f"Google: Ranked at position #{google_ranking}" if google_ranking else "Google: Not in top 10"
+    bing_rank_msg = f"Bing: Ranked at position #{bing_ranking}" if bing_ranking else "Bing: Not in top 10"
+    ranking_msg = f"{google_rank_msg}\n{bing_rank_msg}"
 
     # Construct the prompt
-    prompt = f"""You are an SEO expert analyzing a website's competitive position.
+    prompt = f"""You are an SEO expert analyzing a website's competitive position across multiple search engines.
 
 **Website Being Analyzed:** {url}
 
@@ -459,18 +500,25 @@ async def analyze_seo(
 - Key Features: {', '.join(website_analysis.key_features)}
 - Target Keywords: {', '.join(website_analysis.keywords)}
 
-**Current Search Ranking:**
+**Current Search Rankings:**
 {ranking_msg}
 
-**Top Competitors (from Google search for "{website_analysis.keywords[0]}"):**
-{competitors_info}
+**Top Google Competitors (search for "{website_analysis.keywords[0]}"):**
+{google_competitors}
+
+**Top Bing Competitors (search for "{website_analysis.keywords[0]}"):**
+{bing_competitors}
 
 Please provide a comprehensive SEO analysis with:
-1. **Findings**: Key observations about the website's current SEO position, competitive landscape, and opportunities
-2. **Recommendations**: Specific, actionable steps to improve SEO performance and competitiveness
+1. **Findings**: Key observations about the website's current SEO position across Google and Bing, competitive landscape differences between engines, and opportunities
+2. **Recommendations**: Specific, actionable steps to improve SEO performance on both search engines and overall competitiveness
 3. **Require Attention**: High-priority items or quick wins that should be addressed immediately
 
-IMPORTANT: Write everything in a positive, encouraging, and constructive tone. Focus on opportunities and growth potential rather than shortcomings. Use markdown formatting for better readability (bullet points, bold text, etc.).
+IMPORTANT:
+- Write everything in a positive, encouraging, and constructive tone
+- Focus on opportunities and growth potential rather than shortcomings
+- Highlight any interesting differences between Google and Bing results
+- Use markdown formatting for better readability (bullet points, bold text, headings, etc.)
 """
 
     # Create message
@@ -592,14 +640,18 @@ async def websocket_endpoint(websocket: WebSocket):
                     # Send status update: Searching competitors
                     await websocket.send_json({
                         "type": "status",
-                        "content": "Searching Google for competitors..."
+                        "content": "Searching Google and Bing for competitors..."
                     })
 
-                    # Search Google with the keywords (run in background)
-                    organic_results = await asyncio.to_thread(search_google, analysis_result.keywords)
+                    # Search both Google and Bing in parallel
+                    google_results, bing_results = await asyncio.gather(
+                        asyncio.to_thread(search_google, analysis_result.keywords),
+                        asyncio.to_thread(search_bing, analysis_result.keywords)
+                    )
 
-                    # Find URL ranking
-                    ranking_position = find_url_ranking(url, organic_results)
+                    # Find URL ranking in both engines
+                    google_ranking = find_url_ranking(url, google_results)
+                    bing_ranking = find_url_ranking(url, bing_results)
 
                     # Send status update: Analyzing SEO
                     await websocket.send_json({
@@ -607,12 +659,14 @@ async def websocket_endpoint(websocket: WebSocket):
                         "content": "Analyzing SEO and generating recommendations..."
                     })
 
-                    # Run SEO analysis
+                    # Run SEO analysis with both engines' data
                     seo_result = await analyze_seo(
                         url=url,
                         website_analysis=analysis_result,
-                        organic_results=organic_results,
-                        ranking_position=ranking_position
+                        google_results=google_results,
+                        bing_results=bing_results,
+                        google_ranking=google_ranking,
+                        bing_ranking=bing_ranking
                     )
 
                     # Send SEO recommendations
@@ -622,7 +676,8 @@ async def websocket_endpoint(websocket: WebSocket):
                             "findings": seo_result.findings,
                             "recommendations": seo_result.recommendations,
                             "require_attention": seo_result.require_attention,
-                            "ranking_position": ranking_position
+                            "google_ranking": google_ranking,
+                            "bing_ranking": bing_ranking
                         }
                     })
 

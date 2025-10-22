@@ -317,12 +317,21 @@
         }
 
         .ranking-badge {
-            background: #28a745;
             color: white;
             padding: 4px 12px;
             border-radius: 20px;
             font-size: 12px;
             font-weight: 600;
+            display: inline-block;
+            margin: 0 3px;
+        }
+
+        .ranking-badge.google {
+            background: #4285f4;
+        }
+
+        .ranking-badge.bing {
+            background: #008373;
         }
 
         .ranking-badge.not-ranked {
@@ -615,9 +624,16 @@
                 return marked.parse(text);
             };
 
-            const rankingBadge = seo.ranking_position
-                ? `<span class="ranking-badge">Ranked #${seo.ranking_position}</span>`
-                : `<span class="ranking-badge not-ranked">Not in Top 10</span>`;
+            // Build ranking badge for both engines
+            const googleBadge = seo.google_ranking
+                ? `<span class="ranking-badge google">Google #${seo.google_ranking}</span>`
+                : `<span class="ranking-badge not-ranked">Google: Not in Top 10</span>`;
+
+            const bingBadge = seo.bing_ranking
+                ? `<span class="ranking-badge bing">Bing #${seo.bing_ranking}</span>`
+                : `<span class="ranking-badge not-ranked">Bing: Not in Top 10</span>`;
+
+            const rankingBadge = `${googleBadge} ${bingBadge}`;
 
             seoEl.innerHTML = `
                 <div class="seo-analysis">
