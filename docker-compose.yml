@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8010:8010"
+    environment:
+      - PORT=8010
+      - LLAMA_API_KEY=${LLAMA_API_KEY}
+      - STEEL_API_KEY=${STEEL_API_KEY}
+      - SERPAPI_KEY=${SERPAPI_KEY}
+    volumes:
+      # Mount .env file for local development
+      - ./.env:/.env:ro
+      # Mount cache directory for persistence
+      - ./cache_data:/app/.cache/screenshots
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8010/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

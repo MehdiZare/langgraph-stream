@@ -2,6 +2,27 @@
 
 An AI-powered website screenshot analyzer using LangGraph, Meta Llama Vision, and Steel.dev browser automation. Enter a URL, get an AI-generated description of the website with real-time streaming.
 
+## 🚀 Quick Deploy to AWS
+
+**Want to deploy this to production?** We've got you covered with complete CI/CD infrastructure!
+
+**Start here**: **[GETTING_STARTED.md](GETTING_STARTED.md)** - Choose your deployment path
+
+### Deployment Options:
+- **[QUICKSTART.md](QUICKSTART.md)** - Deploy in 30 minutes ⚡
+- **[SETUP.md](SETUP.md)** - Detailed setup guide 📚
+- **[MIGRATION.md](MIGRATION.md)** - Migrate existing infrastructure 🔄
+
+### What You Get:
+- ✅ Production AWS ECS Fargate deployment
+- ✅ Auto-deploy on merge to main
+- ✅ Ephemeral PR environments (auto-created/destroyed)
+- ✅ Complete CI/CD with GitHub Actions
+- ✅ Infrastructure as Code with Terraform
+- ✅ ~$80/month base cost
+
+---
+
 ## Features
 
 - Real-time WebSocket communication

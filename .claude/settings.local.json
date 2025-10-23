@@ -4,7 +4,9 @@
       "WebSearch",
       "WebFetch(domain:docs.steel.dev)",
       "Bash(uv sync)",
-      "Bash(pkill:*)"
+      "Bash(pkill:*)",
+      "WebFetch(domain:registry.terraform.io)",
+      "Bash(terraform apply:*)"
     ],
     "deny": [],
     "ask": []

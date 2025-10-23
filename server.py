@@ -384,6 +384,12 @@ def find_url_ranking(url: str, organic_results: List[dict]) -> int | None:
 
     return None
 
+# Health check endpoint for AWS ALB/ECS
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for load balancer"""
+    return {"status": "healthy", "service": "langgraph-websocket"}
+
 # Serve static files (for the HTML client)
 @app.get("/")
 async def get_client():
@@ -751,8 +757,15 @@ async def websocket_endpoint(websocket: WebSocket):
         except:
             pass
 
+# Startup event for cache cleanup
+@app.on_event("startup")
+async def startup_event():
+    """Clean up expired cache files on startup"""
+    cleanup_expired_cache()
+    print("Application started successfully")
+
 if __name__ == "__main__":
     import uvicorn
-    # Clean up expired cache files on startup
-    cleanup_expired_cache()
-    uvicorn.run(app, host="0.0.0.0", port=8010)
+    # Get port from environment variable or default to 8010
+    port = int(os.environ.get("PORT", 8010))
+    uvicorn.run(app, host="0.0.0.0", port=port)
