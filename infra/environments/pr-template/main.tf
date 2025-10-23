@@ -13,6 +13,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.80"
     }
+    vercel = {
+      source  = "vercel/vercel"
+      version = "~> 2.0"
+    }
   }
 
   # Workspace is set via TF_WORKSPACE environment variable by GitHub Actions
@@ -35,6 +39,10 @@ provider "aws" {
       AutoCleanup = "true"
     }
   }
+}
+
+provider "vercel" {
+  # API token set via VERCEL_API_TOKEN environment variable in Terraform Cloud
 }
 
 # ============================================================================
@@ -110,4 +118,45 @@ module "ecs_service" {
     PRNumber    = var.pr_number
     AutoCleanup = "true"
   }
+}
+
+# ============================================================================
+# VERCEL INTEGRATION - Inject backend URL into frontend preview
+# ============================================================================
+
+resource "vercel_project_environment_variable" "websocket_url" {
+  count = var.vercel_project_id != "" ? 1 : 0
+
+  project_id = var.vercel_project_id
+  team_id    = var.vercel_team_id
+  key        = "NEXT_PUBLIC_WEBSOCKET_URL"
+  value      = "http://${module.ecs_service.alb_dns_name}"
+  target     = ["preview"]
+
+  # Scope to specific branch if provided
+  git_branch = var.git_branch != "" ? var.git_branch : null
+}
+
+resource "vercel_project_environment_variable" "backend_url" {
+  count = var.vercel_project_id != "" ? 1 : 0
+
+  project_id = var.vercel_project_id
+  team_id    = var.vercel_team_id
+  key        = "NEXT_PUBLIC_BACKEND_URL"
+  value      = "http://${module.ecs_service.alb_dns_name}"
+  target     = ["preview"]
+
+  git_branch = var.git_branch != "" ? var.git_branch : null
+}
+
+resource "vercel_project_environment_variable" "pr_number_env" {
+  count = var.vercel_project_id != "" ? 1 : 0
+
+  project_id = var.vercel_project_id
+  team_id    = var.vercel_team_id
+  key        = "NEXT_PUBLIC_PR_NUMBER"
+  value      = var.pr_number
+  target     = ["preview"]
+
+  git_branch = var.git_branch != "" ? var.git_branch : null
 }

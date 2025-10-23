@@ -46,3 +46,22 @@ variable "alb_idle_timeout" {
   type        = number
   default     = 300
 }
+
+# Vercel Integration
+variable "vercel_project_id" {
+  description = "Vercel project ID (found in Project Settings → General)"
+  type        = string
+  default     = ""
+}
+
+variable "vercel_team_id" {
+  description = "Vercel team ID (optional, only for team projects)"
+  type        = string
+  default     = null
+}
+
+variable "git_branch" {
+  description = "Git branch name for this PR (e.g., test-pr-deployment)"
+  type        = string
+  default     = ""
+}
