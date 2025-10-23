@@ -12,7 +12,11 @@
       "Bash(git commit:*)",
       "Bash(git push)",
       "Bash(gh run watch:*)",
-      "Bash(gh run view:*)"
+      "Bash(gh run view:*)",
+      "Bash(gh pr view:*)",
+      "Bash(find:*)",
+      "WebFetch(domain:pypi.org)",
+      "Bash(supabase init:*)"
     ],
     "deny": [],
     "ask": []

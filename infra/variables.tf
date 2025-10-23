@@ -3,7 +3,7 @@
 variable "aws_region" {
   description = "AWS region for resources"
   type        = string
-  default     = "us-east-2"
+default     = "us-east-2"
 }
 
 variable "project_name" {
@@ -103,6 +103,46 @@ variable "steel_api_key" {
 
 variable "serpapi_key" {
   description = "SerpAPI key (set in Terraform Cloud as sensitive variable)"
+  type        = string
+  sensitive   = true
+}
+
+variable "clerk_secret_key" {
+  description = "Clerk secret key (set in Terraform Cloud as sensitive variable)"
+  type        = string
+  sensitive   = true
+}
+
+variable "clerk_publishable_key" {
+  description = "Clerk publishable key"
+  type        = string
+}
+
+variable "supabase_url" {
+  description = "Supabase project URL"
+  type        = string
+}
+
+variable "supabase_anon_key" {
+  description = "Supabase anon key"
+  type        = string
+}
+
+variable "supabase_service_role_key" {
+  description = "Supabase service role key (set in Terraform Cloud as sensitive variable)"
+  type        = string
+  sensitive   = true
+}
+
+# S3 Configuration
+variable "aws_access_key_id" {
+  description = "AWS Access Key ID for S3 access (set in Terraform Cloud as sensitive variable)"
+  type        = string
+  sensitive   = true
+}
+
+variable "aws_secret_access_key" {
+  description = "AWS Secret Access Key for S3 access (set in Terraform Cloud as sensitive variable)"
   type        = string
   sensitive   = true
 }

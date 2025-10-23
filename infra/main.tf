@@ -231,7 +231,11 @@ resource "aws_iam_role_policy" "ecs_secrets_access" {
         Resource = [
           aws_secretsmanager_secret.llama_api_key.arn,
           aws_secretsmanager_secret.steel_api_key.arn,
-          aws_secretsmanager_secret.serpapi_key.arn
+          aws_secretsmanager_secret.serpapi_key.arn,
+          aws_secretsmanager_secret.clerk_secret_key.arn,
+          aws_secretsmanager_secret.supabase_service_role_key.arn,
+          aws_secretsmanager_secret.aws_access_key_id.arn,
+          aws_secretsmanager_secret.aws_secret_access_key.arn
         ]
       }
     ]
@@ -258,6 +262,31 @@ resource "aws_iam_role" "ecs_task" {
   tags = {
     Name = "${var.project_name}-ecs-task-role"
   }
+}
+
+# Policy for S3 access
+resource "aws_iam_role_policy" "ecs_s3_access" {
+  name = "${var.project_name}-ecs-s3-access"
+  role = aws_iam_role.ecs_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          aws_s3_bucket.scan_data.arn,
+          "${aws_s3_bucket.scan_data.arn}/*"
+        ]
+      }
+    ]
+  })
 }
 
 # ============================================================================
@@ -297,6 +326,52 @@ resource "aws_ecr_lifecycle_policy" "app" {
       }
     ]
   })
+}
+
+# ============================================================================
+# S3 BUCKET FOR SCAN DATA
+# ============================================================================
+
+resource "aws_s3_bucket" "scan_data" {
+  bucket = "${var.project_name}-scan-data-${var.environment}"
+
+  tags = {
+    Name = "${var.project_name}-scan-data"
+  }
+}
+
+resource "aws_s3_bucket_versioning" "scan_data" {
+  bucket = aws_s3_bucket.scan_data.id
+
+  versioning_configuration {
+    status = "Disabled"
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "scan_data" {
+  bucket = aws_s3_bucket.scan_data.id
+
+  rule {
+    id     = "expire-old-scans"
+    status = "Enabled"
+
+    expiration {
+      days = 90
+    }
+
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "scan_data" {
+  bucket = aws_s3_bucket.scan_data.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
 }
 
 # ============================================================================
@@ -343,6 +418,62 @@ resource "aws_secretsmanager_secret" "serpapi_key" {
 resource "aws_secretsmanager_secret_version" "serpapi_key" {
   secret_id     = aws_secretsmanager_secret.serpapi_key.id
   secret_string = var.serpapi_key
+}
+
+resource "aws_secretsmanager_secret" "clerk_secret_key" {
+  name        = "${var.project_name}/clerk-secret-key"
+  description = "Clerk secret key for ${var.project_name}"
+
+  tags = {
+    Name = "${var.project_name}-clerk-secret-key"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "clerk_secret_key" {
+  secret_id     = aws_secretsmanager_secret.clerk_secret_key.id
+  secret_string = var.clerk_secret_key
+}
+
+resource "aws_secretsmanager_secret" "supabase_service_role_key" {
+  name        = "${var.project_name}/supabase-service-role-key"
+  description = "Supabase service role key for ${var.project_name}"
+
+  tags = {
+    Name = "${var.project_name}-supabase-service-role-key"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "supabase_service_role_key" {
+  secret_id     = aws_secretsmanager_secret.supabase_service_role_key.id
+  secret_string = var.supabase_service_role_key
+}
+
+resource "aws_secretsmanager_secret" "aws_access_key_id" {
+  name        = "${var.project_name}/aws-access-key-id"
+  description = "AWS Access Key ID for S3 access"
+
+  tags = {
+    Name = "${var.project_name}-aws-access-key-id"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "aws_access_key_id" {
+  secret_id     = aws_secretsmanager_secret.aws_access_key_id.id
+  secret_string = var.aws_access_key_id
+}
+
+resource "aws_secretsmanager_secret" "aws_secret_access_key" {
+  name        = "${var.project_name}/aws-secret-access-key"
+  description = "AWS Secret Access Key for S3 access"
+
+  tags = {
+    Name = "${var.project_name}-aws-secret-access-key"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "aws_secret_access_key" {
+  secret_id     = aws_secretsmanager_secret.aws_secret_access_key.id
+  secret_string = var.aws_secret_access_key
 }
 
 # ============================================================================
@@ -463,6 +594,26 @@ resource "aws_ecs_task_definition" "app" {
         {
           name  = "PORT"
           value = tostring(var.container_port)
+        },
+        {
+          name  = "CLERK_PUBLISHABLE_KEY"
+          value = var.clerk_publishable_key
+        },
+        {
+          name  = "SUPABASE_URL"
+          value = var.supabase_url
+        },
+        {
+          name  = "SUPABASE_ANON_KEY"
+          value = var.supabase_anon_key
+        },
+        {
+          name  = "AWS_REGION"
+          value = var.aws_region
+        },
+        {
+          name  = "S3_BUCKET_NAME"
+          value = aws_s3_bucket.scan_data.id
         }
       ]
 
@@ -478,6 +629,22 @@ resource "aws_ecs_task_definition" "app" {
         {
           name      = "SERPAPI_KEY"
           valueFrom = aws_secretsmanager_secret.serpapi_key.arn
+        },
+        {
+          name      = "CLERK_SECRET_KEY"
+          valueFrom = aws_secretsmanager_secret.clerk_secret_key.arn
+        },
+        {
+          name      = "SUPABASE_SERVICE_ROLE_KEY"
+          valueFrom = aws_secretsmanager_secret.supabase_service_role_key.arn
+        },
+        {
+          name      = "AWS_ACCESS_KEY_ID"
+          valueFrom = aws_secretsmanager_secret.aws_access_key_id.arn
+        },
+        {
+          name      = "AWS_SECRET_ACCESS_KEY"
+          valueFrom = aws_secretsmanager_secret.aws_secret_access_key.arn
         }
       ]
 
@@ -573,6 +740,14 @@ resource "vercel_project_environment_variable" "websocket_url" {
   project_id = var.vercel_project_id
   team_id    = var.vercel_team_id
   key        = "NEXT_PUBLIC_WEBSOCKET_URL"
+  value      = "http://${aws_lb.main.dns_name}"
+  target     = ["production", "preview", "development"]
+}
+
+resource "vercel_project_environment_variable" "backend_url" {
+  project_id = var.vercel_project_id
+  team_id    = var.vercel_team_id
+  key        = "NEXT_PUBLIC_BACKEND_URL"
   value      = "http://${aws_lb.main.dns_name}"
   target     = ["production", "preview", "development"]
 }
