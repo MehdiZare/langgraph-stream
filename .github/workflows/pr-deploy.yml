@@ -4,6 +4,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     branches:
+      - claude/langgraph-websocket-test-011CUKGPe1M5R36a5hzuEoBP
       - main
 
 env:
