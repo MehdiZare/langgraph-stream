@@ -33,7 +33,6 @@ provider "aws" {
       PRNumber    = var.pr_number
       # Auto-cleanup tag for cost optimization
       AutoCleanup = "true"
-      CreatedAt   = timestamp()
     }
   }
 }
