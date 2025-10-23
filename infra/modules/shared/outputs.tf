@@ -37,3 +37,13 @@ output "cloudwatch_log_group_name" {
   description = "Name of the CloudWatch log group"
   value       = aws_cloudwatch_log_group.app.name
 }
+
+output "s3_scans_bucket_name" {
+  description = "Name of the S3 bucket for scan data"
+  value       = aws_s3_bucket.scans.id
+}
+
+output "s3_scans_bucket_arn" {
+  description = "ARN of the S3 bucket for scan data"
+  value       = aws_s3_bucket.scans.arn
+}
