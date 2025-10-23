@@ -2,6 +2,8 @@
 
 An AI-powered website screenshot analyzer using LangGraph, Meta Llama Vision, and Steel.dev browser automation. Enter a URL, get an AI-generated description of the website with real-time streaming.
 
+> **Testing Note**: This PR tests the automated deployment infrastructure with ephemeral ECS environments.
+
 ## 🚀 Quick Deploy to AWS
 
 **Want to deploy this to production?** We've got you covered with complete CI/CD infrastructure!
