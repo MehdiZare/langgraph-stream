@@ -129,12 +129,11 @@ resource "vercel_project_environment_variable" "websocket_url" {
 
   project_id = var.vercel_project_id
   team_id    = var.vercel_team_id
-  key        = "NEXT_PUBLIC_WEBSOCKET_URL"
+  key        = "NEXT_PUBLIC_WEBSOCKET_URL_PR_${var.pr_number}"
   value      = "http://${module.ecs_service.alb_dns_name}"
   target     = ["preview"]
 
-  # Scope to specific branch if provided
-  git_branch = var.git_branch != "" ? var.git_branch : null
+  # Note: Not using git_branch since Vercel project is connected to frontend repo
 }
 
 resource "vercel_project_environment_variable" "backend_url" {
@@ -142,11 +141,9 @@ resource "vercel_project_environment_variable" "backend_url" {
 
   project_id = var.vercel_project_id
   team_id    = var.vercel_team_id
-  key        = "NEXT_PUBLIC_BACKEND_URL"
+  key        = "NEXT_PUBLIC_BACKEND_URL_PR_${var.pr_number}"
   value      = "http://${module.ecs_service.alb_dns_name}"
   target     = ["preview"]
-
-  git_branch = var.git_branch != "" ? var.git_branch : null
 }
 
 resource "vercel_project_environment_variable" "pr_number_env" {
@@ -157,6 +154,4 @@ resource "vercel_project_environment_variable" "pr_number_env" {
   key        = "NEXT_PUBLIC_PR_NUMBER"
   value      = var.pr_number
   target     = ["preview"]
-
-  git_branch = var.git_branch != "" ? var.git_branch : null
 }

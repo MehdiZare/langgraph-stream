@@ -168,7 +168,6 @@ jobs:
           set_variable "pr_number" "${{ github.event.pull_request.number }}" false "terraform"
           set_variable "vercel_project_id" "${{ secrets.VERCEL_PROJECT_ID }}" false "terraform"
           set_variable "vercel_team_id" "${{ secrets.VERCEL_TEAM_ID }}" false "terraform"
-          set_variable "git_branch" "${{ github.head_ref }}" false "terraform"
 
       - name: Grant PR workspace access to shared workspace state
         env:
