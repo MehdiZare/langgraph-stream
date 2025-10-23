@@ -164,6 +164,59 @@ jobs:
           # Set Terraform variables
           set_variable "pr_number" "${{ github.event.pull_request.number }}" false "terraform"
 
+      - name: Grant PR workspace access to shared workspace state
+        env:
+          TF_CLOUD_TOKEN: ${{ secrets.TF_API_TOKEN }}
+          WORKSPACE_NAME: ${{ env.TF_WORKSPACE_PREFIX }}-${{ github.event.pull_request.number }}
+        run: |
+          # Get shared workspace ID
+          SHARED_WS_ID=$(curl -s \
+            --header "Authorization: Bearer $TF_CLOUD_TOKEN" \
+            --header "Content-Type: application/vnd.api+json" \
+            "https://app.terraform.io/api/v2/organizations/$TF_CLOUD_ORGANIZATION/workspaces/roboad-fast-ws-shared" \
+            | jq -r '.data.id')
+
+          # Get PR workspace ID
+          PR_WS_ID=$(curl -s \
+            --header "Authorization: Bearer $TF_CLOUD_TOKEN" \
+            --header "Content-Type: application/vnd.api+json" \
+            "https://app.terraform.io/api/v2/organizations/$TF_CLOUD_ORGANIZATION/workspaces/$WORKSPACE_NAME" \
+            | jq -r '.data.id')
+
+          echo "Shared workspace ID: $SHARED_WS_ID"
+          echo "PR workspace ID: $PR_WS_ID"
+
+          # Update shared workspace to allow PR workspace to read its state
+          # Get current remote state consumers
+          CURRENT_CONSUMERS=$(curl -s \
+            --header "Authorization: Bearer $TF_CLOUD_TOKEN" \
+            --header "Content-Type: application/vnd.api+json" \
+            "https://app.terraform.io/api/v2/workspaces/$SHARED_WS_ID/relationships/remote-state-consumers" \
+            | jq -r '[.data[].id] // []')
+
+          # Add PR workspace if not already in the list
+          if ! echo "$CURRENT_CONSUMERS" | grep -q "$PR_WS_ID"; then
+            # Get current list and add new workspace
+            NEW_CONSUMERS=$(echo "$CURRENT_CONSUMERS" | jq ". + [\"$PR_WS_ID\"]")
+
+            # Build the payload
+            PAYLOAD=$(jq -n \
+              --argjson data "$(echo $NEW_CONSUMERS | jq 'map({type: "workspaces", id: .})')" \
+              '{data: $data}')
+
+            # Update the workspace
+            curl -s \
+              --header "Authorization: Bearer $TF_CLOUD_TOKEN" \
+              --header "Content-Type: application/vnd.api+json" \
+              --request PATCH \
+              --data "$PAYLOAD" \
+              "https://app.terraform.io/api/v2/workspaces/$SHARED_WS_ID/relationships/remote-state-consumers"
+
+            echo "✅ Granted PR workspace access to shared workspace state"
+          else
+            echo "✅ PR workspace already has access to shared workspace state"
+          fi
+
       - name: Terraform Init and Apply
         working-directory: infra/environments/pr-template
         env:
