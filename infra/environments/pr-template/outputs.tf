@@ -22,3 +22,13 @@ output "pr_number" {
   description = "GitHub Pull Request number"
   value       = var.pr_number
 }
+
+output "vercel_env_vars_created" {
+  description = "Whether Vercel environment variables were created"
+  value       = length(vercel_project_environment_variable.websocket_url) > 0
+}
+
+output "vercel_project_id" {
+  description = "Vercel project ID (if configured)"
+  value       = var.vercel_project_id
+}

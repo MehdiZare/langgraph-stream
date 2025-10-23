@@ -4,6 +4,7 @@ on:
   pull_request:
     types: [closed]
     branches:
+      - claude/langgraph-websocket-test-011CUKGPe1M5R36a5hzuEoBP
       - main
 
 env:
@@ -64,11 +65,13 @@ jobs:
         working-directory: infra/environments/pr-template
         env:
           TF_WORKSPACE: ${{ env.TF_WORKSPACE_PREFIX }}-${{ github.event.pull_request.number }}
+          VERCEL_API_TOKEN: ${{ secrets.VERCEL_API_TOKEN }}
         run: |
           terraform init
           terraform destroy -auto-approve \
             -var="pr_number=${{ github.event.pull_request.number }}" \
-            -var="workspace_name=$TF_WORKSPACE" || true
+            -var="vercel_project_id=${{ secrets.VERCEL_PROJECT_ID }}" \
+            -var="vercel_team_id=${{ secrets.VERCEL_TEAM_ID }}" || true
 
       - name: Delete Terraform Cloud workspace
         if: steps.check-workspace.outputs.exists == 'true'
@@ -102,7 +105,7 @@ jobs:
 
             let comment;
             if (wasDestroyed) {
-              comment = `## PR Environment Cleaned Up
+              comment = `## ✅ PR Environment Cleaned Up
 
               Your PR environment has been successfully destroyed.
 
@@ -112,8 +115,10 @@ jobs:
               - Security groups
               - ECR image (tag: \`pr-${prNumber}\`)
               - Terraform Cloud workspace
+              - Vercel environment variables (backend URLs)
 
               All resources associated with PR #${prNumber} have been removed.
+              Vercel preview deployments will be automatically cleaned up by Vercel.
               `;
             } else {
               comment = `## PR Environment Cleanup

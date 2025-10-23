@@ -6,7 +6,13 @@
       "Bash(uv sync)",
       "Bash(pkill:*)",
       "WebFetch(domain:registry.terraform.io)",
-      "Bash(terraform apply:*)"
+      "Bash(terraform apply:*)",
+      "Bash(gh run list:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push)",
+      "Bash(gh run watch:*)",
+      "Bash(gh run view:*)"
     ],
     "deny": [],
     "ask": []

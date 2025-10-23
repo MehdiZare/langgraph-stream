@@ -4,6 +4,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     branches:
+      - claude/langgraph-websocket-test-011CUKGPe1M5R36a5hzuEoBP
       - main
 
 env:
@@ -160,9 +161,66 @@ jobs:
           set_variable "AWS_ACCESS_KEY_ID" "${{ secrets.AWS_ACCESS_KEY_ID }}" true "env"
           set_variable "AWS_SECRET_ACCESS_KEY" "${{ secrets.AWS_SECRET_ACCESS_KEY }}" true "env"
 
+          # Set Vercel API token as environment variable
+          set_variable "VERCEL_API_TOKEN" "${{ secrets.VERCEL_API_TOKEN }}" true "env"
+
           # Set Terraform variables
           set_variable "pr_number" "${{ github.event.pull_request.number }}" false "terraform"
-          set_variable "workspace_name" "$WORKSPACE_NAME" false "terraform"
+          set_variable "vercel_project_id" "${{ secrets.VERCEL_PROJECT_ID }}" false "terraform"
+          set_variable "vercel_team_id" "${{ secrets.VERCEL_TEAM_ID }}" false "terraform"
+
+      - name: Grant PR workspace access to shared workspace state
+        env:
+          TF_CLOUD_TOKEN: ${{ secrets.TF_API_TOKEN }}
+          WORKSPACE_NAME: ${{ env.TF_WORKSPACE_PREFIX }}-${{ github.event.pull_request.number }}
+        run: |
+          # Get shared workspace ID
+          SHARED_WS_ID=$(curl -s \
+            --header "Authorization: Bearer $TF_CLOUD_TOKEN" \
+            --header "Content-Type: application/vnd.api+json" \
+            "https://app.terraform.io/api/v2/organizations/$TF_CLOUD_ORGANIZATION/workspaces/roboad-fast-ws-shared" \
+            | jq -r '.data.id')
+
+          # Get PR workspace ID
+          PR_WS_ID=$(curl -s \
+            --header "Authorization: Bearer $TF_CLOUD_TOKEN" \
+            --header "Content-Type: application/vnd.api+json" \
+            "https://app.terraform.io/api/v2/organizations/$TF_CLOUD_ORGANIZATION/workspaces/$WORKSPACE_NAME" \
+            | jq -r '.data.id')
+
+          echo "Shared workspace ID: $SHARED_WS_ID"
+          echo "PR workspace ID: $PR_WS_ID"
+
+          # Update shared workspace to allow PR workspace to read its state
+          # Get current remote state consumers
+          CURRENT_CONSUMERS=$(curl -s \
+            --header "Authorization: Bearer $TF_CLOUD_TOKEN" \
+            --header "Content-Type: application/vnd.api+json" \
+            "https://app.terraform.io/api/v2/workspaces/$SHARED_WS_ID/relationships/remote-state-consumers" \
+            | jq -r '[.data[].id] // []')
+
+          # Add PR workspace if not already in the list
+          if ! echo "$CURRENT_CONSUMERS" | grep -q "$PR_WS_ID"; then
+            # Get current list and add new workspace
+            NEW_CONSUMERS=$(echo "$CURRENT_CONSUMERS" | jq ". + [\"$PR_WS_ID\"]")
+
+            # Build the payload
+            PAYLOAD=$(jq -n \
+              --argjson data "$(echo $NEW_CONSUMERS | jq 'map({type: "workspaces", id: .})')" \
+              '{data: $data}')
+
+            # Update the workspace
+            curl -s \
+              --header "Authorization: Bearer $TF_CLOUD_TOKEN" \
+              --header "Content-Type: application/vnd.api+json" \
+              --request PATCH \
+              --data "$PAYLOAD" \
+              "https://app.terraform.io/api/v2/workspaces/$SHARED_WS_ID/relationships/remote-state-consumers"
+
+            echo "✅ Granted PR workspace access to shared workspace state"
+          else
+            echo "✅ PR workspace already has access to shared workspace state"
+          fi
 
       - name: Terraform Init and Apply
         working-directory: infra/environments/pr-template
@@ -171,8 +229,7 @@ jobs:
         run: |
           terraform init
           terraform apply -auto-approve \
-            -var="pr_number=${{ github.event.pull_request.number }}" \
-            -var="workspace_name=$TF_WORKSPACE"
+            -var="pr_number=${{ github.event.pull_request.number }}"
 
       - name: Get ALB URL
         id: get-url
@@ -190,16 +247,24 @@ jobs:
             const prNumber = context.payload.pull_request.number;
             const albUrl = '${{ steps.get-url.outputs.alb_url }}';
 
-            const comment = `## PR Environment Deployed
+            const comment = `## 🚀 PR Environment Deployed
 
             Your PR environment has been successfully deployed!
 
-            **Environment URL:** ${albUrl}
+            **Backend URL:** ${albUrl}
+            **Frontend Preview:** Vercel will auto-deploy when environment variables are set
+            - Check [Vercel Deployments](https://vercel.com) for preview URL
+            - Branch: \`${{ github.head_ref }}\`
 
             **Details:**
             - PR Number: #${prNumber}
-            - Image Tag: \`pr-${prNumber}\`
+            - Backend Image: \`pr-${prNumber}\`
             - Workspace: \`${{ env.TF_WORKSPACE_PREFIX }}-${prNumber}\`
+
+            **Environment Variables Injected:**
+            - \`NEXT_PUBLIC_WEBSOCKET_URL\`: ${albUrl}
+            - \`NEXT_PUBLIC_BACKEND_URL\`: ${albUrl}
+            - \`NEXT_PUBLIC_PR_NUMBER\`: ${prNumber}
 
             **Health Check:**
             \`\`\`bash
@@ -208,7 +273,7 @@ jobs:
 
             ---
 
-            This environment will be automatically destroyed when the PR is closed or merged.
+            Both backend and frontend environments will be automatically destroyed when the PR is closed or merged.
             `;
 
             // Check if we already commented
