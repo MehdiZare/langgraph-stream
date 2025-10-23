@@ -10,12 +10,6 @@ variable "project_name" {
   default     = "roboad-backend"
 }
 
-variable "workspace_name" {
-  description = "Terraform Cloud workspace name (e.g., roboad-fast-ws-pr-123)"
-  type        = string
-  default     = "roboad-fast-ws-pr-template"
-}
-
 variable "pr_number" {
   description = "GitHub Pull Request number"
   type        = string

@@ -163,7 +163,6 @@ jobs:
 
           # Set Terraform variables
           set_variable "pr_number" "${{ github.event.pull_request.number }}" false "terraform"
-          set_variable "workspace_name" "$WORKSPACE_NAME" false "terraform"
 
       - name: Terraform Init and Apply
         working-directory: infra/environments/pr-template
@@ -172,8 +171,7 @@ jobs:
         run: |
           terraform init
           terraform apply -auto-approve \
-            -var="pr_number=${{ github.event.pull_request.number }}" \
-            -var="workspace_name=$TF_WORKSPACE"
+            -var="pr_number=${{ github.event.pull_request.number }}"
 
       - name: Get ALB URL
         id: get-url

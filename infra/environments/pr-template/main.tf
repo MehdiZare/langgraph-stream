@@ -15,13 +15,10 @@ terraform {
     }
   }
 
+  # Workspace is set via TF_WORKSPACE environment variable by GitHub Actions
+  # This allows dynamic workspace creation per PR
   cloud {
     organization = "roboad"
-
-    workspaces {
-      # GitHub Actions will create dynamic workspaces like: roboad-fast-ws-pr-123
-      name = var.workspace_name
-    }
   }
 }
 
