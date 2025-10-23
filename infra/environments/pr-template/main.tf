@@ -125,33 +125,34 @@ module "ecs_service" {
 # ============================================================================
 
 resource "vercel_project_environment_variable" "websocket_url" {
-  count = var.vercel_project_id != "" ? 1 : 0
+  count = var.vercel_project_id != "" && var.git_branch != "" ? 1 : 0
 
   project_id = var.vercel_project_id
   team_id    = var.vercel_team_id
-  key        = "NEXT_PUBLIC_WEBSOCKET_URL_PR_${var.pr_number}"
+  key        = "NEXT_PUBLIC_WEBSOCKET_URL"
   value      = "http://${module.ecs_service.alb_dns_name}"
   target     = ["preview"]
-
-  # Note: Not using git_branch since Vercel project is connected to frontend repo
+  git_branch = var.git_branch
 }
 
 resource "vercel_project_environment_variable" "backend_url" {
-  count = var.vercel_project_id != "" ? 1 : 0
+  count = var.vercel_project_id != "" && var.git_branch != "" ? 1 : 0
 
   project_id = var.vercel_project_id
   team_id    = var.vercel_team_id
-  key        = "NEXT_PUBLIC_BACKEND_URL_PR_${var.pr_number}"
+  key        = "NEXT_PUBLIC_BACKEND_URL"
   value      = "http://${module.ecs_service.alb_dns_name}"
   target     = ["preview"]
+  git_branch = var.git_branch
 }
 
 resource "vercel_project_environment_variable" "pr_number_env" {
-  count = var.vercel_project_id != "" ? 1 : 0
+  count = var.vercel_project_id != "" && var.git_branch != "" ? 1 : 0
 
   project_id = var.vercel_project_id
   team_id    = var.vercel_team_id
   key        = "NEXT_PUBLIC_PR_NUMBER"
   value      = var.pr_number
   target     = ["preview"]
+  git_branch = var.git_branch
 }

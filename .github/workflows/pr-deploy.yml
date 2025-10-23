@@ -166,6 +166,7 @@ jobs:
 
           # Set Terraform variables
           set_variable "pr_number" "${{ github.event.pull_request.number }}" false "terraform"
+          set_variable "git_branch" "${{ github.head_ref }}" false "terraform"
           set_variable "vercel_project_id" "${{ secrets.VERCEL_PROJECT_ID }}" false "terraform"
           set_variable "vercel_team_id" "${{ secrets.VERCEL_TEAM_ID }}" false "terraform"
 
@@ -229,7 +230,8 @@ jobs:
         run: |
           terraform init
           terraform apply -auto-approve \
-            -var="pr_number=${{ github.event.pull_request.number }}"
+            -var="pr_number=${{ github.event.pull_request.number }}" \
+            -var="git_branch=${{ github.head_ref }}"
 
       - name: Get ALB URL
         id: get-url
@@ -261,7 +263,7 @@ jobs:
             - Backend Image: \`pr-${prNumber}\`
             - Workspace: \`${{ env.TF_WORKSPACE_PREFIX }}-${prNumber}\`
 
-            **Environment Variables Injected:**
+            **Environment Variables Injected (scoped to branch \`${{ github.head_ref }}\`):**
             - \`NEXT_PUBLIC_WEBSOCKET_URL\`: ${albUrl}
             - \`NEXT_PUBLIC_BACKEND_URL\`: ${albUrl}
             - \`NEXT_PUBLIC_PR_NUMBER\`: ${prNumber}

@@ -16,7 +16,10 @@
       "Bash(gh pr view:*)",
       "Bash(find:*)",
       "WebFetch(domain:pypi.org)",
-      "Bash(supabase init:*)"
+      "Bash(supabase init:*)",
+      "Bash(python -m py_compile:*)",
+      "Bash(python:*)",
+      "Bash(source .venv/bin/activate)"
     ],
     "deny": [],
     "ask": []
