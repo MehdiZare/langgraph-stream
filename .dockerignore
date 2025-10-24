@@ -16,6 +16,7 @@ ENV/
 # Cache
 .cache/
 *.cache
+cache_data/
 
 # IDE
 .vscode/

@@ -8,10 +8,10 @@ WORKDIR /app
 RUN pip install --no-cache-dir uv
 
 # Copy dependency files
-COPY pyproject.toml ./
+COPY requirements.txt ./
 
-# Install dependencies using uv
-RUN uv pip install --system --no-cache -r pyproject.toml
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Production stage
 FROM python:3.11-slim
@@ -29,11 +29,11 @@ COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy application files
-COPY server.py client.html ./
-COPY .env.example ./
-
-# Set ownership
-RUN chown -R appuser:appuser /app
+COPY --chown=appuser:appuser server.py app.py config.py models.py utils.py db.py ./
+COPY --chown=appuser:appuser client.html ./
+COPY --chown=appuser:appuser routes/ ./routes/
+COPY --chown=appuser:appuser services/ ./services/
+COPY --chown=appuser:appuser workflow/ ./workflow/
 
 # Switch to non-root user
 USER appuser
@@ -42,8 +42,8 @@ USER appuser
 EXPOSE 8010
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD python -c "import requests; requests.get('http://localhost:8010/health')" || exit 1
 
-# Run the application
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8010"]
+# Run the application (socket_app from server.py)
+CMD ["python", "server.py"]

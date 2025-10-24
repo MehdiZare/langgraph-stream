@@ -351,3 +351,130 @@ async def claim_user_scans(supabase: Client, session_id: str, user_id: str) -> i
     }).execute()
 
     return response.data
+
+
+async def can_access_scan(
+    supabase: Client,
+    scan_id: str,
+    user_id: Optional[str] = None,
+    session_id: Optional[str] = None
+) -> bool:
+    """
+    Check if a user/session has access to a scan.
+
+    A user has access if:
+    - They own the scan (user_id matches)
+    - The scan is anonymous and session_id matches
+
+    Args:
+        supabase: Supabase client instance
+        scan_id: UUID of the scan
+        user_id: UUID of the authenticated user (optional)
+        session_id: Session ID for anonymous users (optional)
+
+    Returns:
+        True if user has access, False otherwise
+    """
+    try:
+        response = supabase.table('scans').select('*').eq('id', scan_id).execute()
+
+        if not response.data or len(response.data) == 0:
+            return False
+
+        scan = response.data[0]
+
+        # Check if user owns the scan
+        if user_id and scan.get('user_id') == user_id:
+            return True
+
+        # Check if session matches for anonymous scan
+        if session_id and scan.get('session_id') == session_id:
+            return True
+
+        return False
+    except Exception as e:
+        print(f"Error checking scan access: {e}")
+        return False
+
+
+async def get_scan_by_id(
+    supabase: Client,
+    scan_id: str,
+    user_id: Optional[str] = None,
+    session_id: Optional[str] = None
+) -> Optional[dict]:
+    """
+    Get a scan by ID with access verification.
+
+    Args:
+        supabase: Supabase client instance
+        scan_id: UUID of the scan
+        user_id: UUID of the authenticated user (optional)
+        session_id: Session ID for anonymous users (optional)
+
+    Returns:
+        Scan record as dict if user has access, None otherwise
+    """
+    # Check access first
+    has_access = await can_access_scan(supabase, scan_id, user_id, session_id)
+    if not has_access:
+        return None
+
+    try:
+        # Get scan with website data
+        response = supabase.table('scans').select(
+            '*, websites(*)'
+        ).eq('id', scan_id).execute()
+
+        if response.data and len(response.data) > 0:
+            return response.data[0]
+
+        return None
+    except Exception as e:
+        print(f"Error getting scan: {e}")
+        return None
+
+
+async def list_user_scans(
+    supabase: Client,
+    user_id: str,
+    limit: int = 20,
+    offset: int = 0,
+    status: Optional[str] = None
+) -> tuple[list[dict], int]:
+    """
+    List scans for a user with pagination.
+
+    Args:
+        supabase: Supabase client instance
+        user_id: UUID of the authenticated user
+        limit: Number of scans to return
+        offset: Number of scans to skip
+        status: Filter by status (optional)
+
+    Returns:
+        Tuple of (scans list, total count)
+    """
+    try:
+        # Build query
+        query = supabase.table('scans').select(
+            '*, websites(*)',
+            count='exact'
+        ).eq('user_id', user_id)
+
+        # Apply status filter if provided
+        if status:
+            query = query.eq('status', status)
+
+        # Apply pagination and ordering
+        query = query.order('created_at', desc=True).range(offset, offset + limit - 1)
+
+        response = query.execute()
+
+        scans = response.data if response.data else []
+        total = response.count if hasattr(response, 'count') else len(scans)
+
+        return scans, total
+    except Exception as e:
+        print(f"Error listing user scans: {e}")
+        return [], 0
