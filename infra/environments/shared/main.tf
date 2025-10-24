@@ -12,6 +12,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.80"
     }
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 4.0"
+    }
   }
 
   cloud {
@@ -33,6 +37,10 @@ provider "aws" {
       ManagedBy   = "Terraform"
     }
   }
+}
+
+provider "cloudflare" {
+  # API token set via CLOUDFLARE_API_TOKEN environment variable in Terraform Cloud
 }
 
 # ============================================================================
@@ -75,6 +83,63 @@ module "shared" {
   tags = {
     Environment = "shared"
   }
+}
+
+# ============================================================================
+# CLOUDFLARE DATA SOURCES
+# ============================================================================
+
+data "cloudflare_zone" "main" {
+  name = "roboad.ai"
+}
+
+# ============================================================================
+# ACM WILDCARD CERTIFICATE
+# ============================================================================
+
+resource "aws_acm_certificate" "wildcard" {
+  domain_name       = "*.roboad.ai"
+  validation_method = "DNS"
+
+  subject_alternative_names = [
+    "roboad.ai"  # Include apex domain
+  ]
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  tags = {
+    Name        = "${var.project_name}-wildcard-cert"
+    Environment = "shared"
+    ManagedBy   = "Terraform"
+  }
+}
+
+# Cloudflare DNS validation records
+resource "cloudflare_record" "cert_validation" {
+  for_each = {
+    for dvo in aws_acm_certificate.wildcard.domain_validation_options : dvo.domain_name => {
+      name   = dvo.resource_record_name
+      record = dvo.resource_record_value
+      type   = dvo.resource_record_type
+    }
+  }
+
+  zone_id = data.cloudflare_zone.main.id
+  name    = each.value.name
+  content = each.value.record
+  type    = each.value.type
+  ttl     = 60
+  proxied = false
+
+  comment = "ACM certificate validation for ${each.key}"
+}
+
+# Wait for certificate validation
+resource "aws_acm_certificate_validation" "wildcard" {
+  certificate_arn         = aws_acm_certificate.wildcard.arn
+  validation_record_fqdns = [for record in cloudflare_record.cert_validation : record.hostname]
 }
 
 # ============================================================================

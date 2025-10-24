@@ -135,11 +135,39 @@ resource "aws_lb_target_group" "app" {
   }
 }
 
-# HTTP Listener
+# HTTP Listener - Redirect to HTTPS if certificate provided, otherwise forward
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
   port              = 80
   protocol          = "HTTP"
+
+  default_action {
+    type = var.certificate_arn != "" ? "redirect" : "forward"
+
+    # Redirect to HTTPS if certificate is provided
+    dynamic "redirect" {
+      for_each = var.certificate_arn != "" ? [1] : []
+      content {
+        port        = "443"
+        protocol    = "HTTPS"
+        status_code = "HTTP_301"
+      }
+    }
+
+    # Forward to target group if no certificate (HTTP only)
+    target_group_arn = var.certificate_arn == "" ? aws_lb_target_group.app.arn : null
+  }
+}
+
+# HTTPS Listener (only created if certificate is provided)
+resource "aws_lb_listener" "https" {
+  count = var.certificate_arn != "" ? 1 : 0
+
+  load_balancer_arn = aws_lb.main.arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  certificate_arn   = var.certificate_arn
 
   default_action {
     type             = "forward"
@@ -301,7 +329,8 @@ resource "aws_ecs_service" "app" {
   }
 
   depends_on = [
-    aws_lb_listener.http
+    aws_lb_listener.http,
+    aws_lb_listener.https
   ]
 
   tags = merge(
