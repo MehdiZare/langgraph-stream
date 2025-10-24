@@ -96,7 +96,12 @@ resource "aws_iam_role_policy" "ecs_secrets_access" {
         Resource = [
           aws_secretsmanager_secret.llama_api_key.arn,
           aws_secretsmanager_secret.steel_api_key.arn,
-          aws_secretsmanager_secret.serpapi_key.arn
+          aws_secretsmanager_secret.serpapi_key.arn,
+          aws_secretsmanager_secret.clerk_secret_key.arn,
+          aws_secretsmanager_secret.clerk_publishable_key.arn,
+          aws_secretsmanager_secret.supabase_url.arn,
+          aws_secretsmanager_secret.supabase_anon_key.arn,
+          aws_secretsmanager_secret.supabase_service_role_key.arn
         ]
       }
     ]
@@ -206,6 +211,91 @@ resource "aws_secretsmanager_secret" "serpapi_key" {
 resource "aws_secretsmanager_secret_version" "serpapi_key" {
   secret_id     = aws_secretsmanager_secret.serpapi_key.id
   secret_string = var.serpapi_key
+}
+
+resource "aws_secretsmanager_secret" "clerk_secret_key" {
+  name        = "${var.project_name}/clerk-secret-key"
+  description = "Clerk secret key for ${var.project_name}"
+
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.project_name}-clerk-secret-key"
+    }
+  )
+}
+
+resource "aws_secretsmanager_secret_version" "clerk_secret_key" {
+  secret_id     = aws_secretsmanager_secret.clerk_secret_key.id
+  secret_string = var.clerk_secret_key
+}
+
+resource "aws_secretsmanager_secret" "clerk_publishable_key" {
+  name        = "${var.project_name}/clerk-publishable-key"
+  description = "Clerk publishable key for ${var.project_name}"
+
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.project_name}-clerk-publishable-key"
+    }
+  )
+}
+
+resource "aws_secretsmanager_secret_version" "clerk_publishable_key" {
+  secret_id     = aws_secretsmanager_secret.clerk_publishable_key.id
+  secret_string = var.clerk_publishable_key
+}
+
+resource "aws_secretsmanager_secret" "supabase_url" {
+  name        = "${var.project_name}/supabase-url"
+  description = "Supabase URL for ${var.project_name}"
+
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.project_name}-supabase-url"
+    }
+  )
+}
+
+resource "aws_secretsmanager_secret_version" "supabase_url" {
+  secret_id     = aws_secretsmanager_secret.supabase_url.id
+  secret_string = var.supabase_url
+}
+
+resource "aws_secretsmanager_secret" "supabase_anon_key" {
+  name        = "${var.project_name}/supabase-anon-key"
+  description = "Supabase anon key for ${var.project_name}"
+
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.project_name}-supabase-anon-key"
+    }
+  )
+}
+
+resource "aws_secretsmanager_secret_version" "supabase_anon_key" {
+  secret_id     = aws_secretsmanager_secret.supabase_anon_key.id
+  secret_string = var.supabase_anon_key
+}
+
+resource "aws_secretsmanager_secret" "supabase_service_role_key" {
+  name        = "${var.project_name}/supabase-service-role-key"
+  description = "Supabase service role key for ${var.project_name}"
+
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.project_name}-supabase-service-role-key"
+    }
+  )
+}
+
+resource "aws_secretsmanager_secret_version" "supabase_service_role_key" {
+  secret_id     = aws_secretsmanager_secret.supabase_service_role_key.id
+  secret_string = var.supabase_service_role_key
 }
 
 # ============================================================================

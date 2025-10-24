@@ -202,6 +202,14 @@ resource "aws_ecs_task_definition" "app" {
           {
             name  = "ENVIRONMENT"
             value = var.environment
+          },
+          {
+            name  = "AWS_REGION"
+            value = var.aws_region
+          },
+          {
+            name  = "S3_BUCKET_NAME"
+            value = var.s3_bucket_name
           }
         ],
         var.additional_environment_variables
@@ -219,6 +227,26 @@ resource "aws_ecs_task_definition" "app" {
         {
           name      = "SERPAPI_KEY"
           valueFrom = var.serpapi_key_secret_arn
+        },
+        {
+          name      = "CLERK_SECRET_KEY"
+          valueFrom = var.clerk_secret_key_arn
+        },
+        {
+          name      = "CLERK_PUBLISHABLE_KEY"
+          valueFrom = var.clerk_publishable_key_arn
+        },
+        {
+          name      = "SUPABASE_URL"
+          valueFrom = var.supabase_url_secret_arn
+        },
+        {
+          name      = "SUPABASE_ANON_KEY"
+          valueFrom = var.supabase_anon_key_secret_arn
+        },
+        {
+          name      = "SUPABASE_SERVICE_ROLE_KEY"
+          valueFrom = var.supabase_service_role_key_secret_arn
         }
       ]
 

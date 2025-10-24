@@ -42,6 +42,36 @@ variable "serpapi_key" {
   sensitive   = true
 }
 
+variable "clerk_secret_key" {
+  description = "Clerk secret key (set in Terraform Cloud as sensitive variable)"
+  type        = string
+  sensitive   = true
+}
+
+variable "clerk_publishable_key" {
+  description = "Clerk publishable key (set in Terraform Cloud as sensitive variable)"
+  type        = string
+  sensitive   = true
+}
+
+variable "supabase_url" {
+  description = "Supabase project URL (set in Terraform Cloud as sensitive variable)"
+  type        = string
+  sensitive   = true
+}
+
+variable "supabase_anon_key" {
+  description = "Supabase anonymous key (set in Terraform Cloud as sensitive variable)"
+  type        = string
+  sensitive   = true
+}
+
+variable "supabase_service_role_key" {
+  description = "Supabase service role key (set in Terraform Cloud as sensitive variable)"
+  type        = string
+  sensitive   = true
+}
+
 variable "log_retention_days" {
   description = "CloudWatch log retention in days"
   type        = number

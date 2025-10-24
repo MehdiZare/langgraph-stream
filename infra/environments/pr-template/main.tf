@@ -90,9 +90,17 @@ module "ecs_service" {
   task_role_arn           = data.terraform_remote_state.shared.outputs.ecs_task_role_arn
 
   # Secrets (from shared workspace)
-  llama_api_key_secret_arn  = data.terraform_remote_state.shared.outputs.llama_api_key_secret_arn
-  steel_api_key_secret_arn  = data.terraform_remote_state.shared.outputs.steel_api_key_secret_arn
-  serpapi_key_secret_arn    = data.terraform_remote_state.shared.outputs.serpapi_key_secret_arn
+  llama_api_key_secret_arn              = data.terraform_remote_state.shared.outputs.llama_api_key_secret_arn
+  steel_api_key_secret_arn              = data.terraform_remote_state.shared.outputs.steel_api_key_secret_arn
+  serpapi_key_secret_arn                = data.terraform_remote_state.shared.outputs.serpapi_key_secret_arn
+  clerk_secret_key_arn                  = data.terraform_remote_state.shared.outputs.clerk_secret_key_arn
+  clerk_publishable_key_arn             = data.terraform_remote_state.shared.outputs.clerk_publishable_key_arn
+  supabase_url_secret_arn               = data.terraform_remote_state.shared.outputs.supabase_url_secret_arn
+  supabase_anon_key_secret_arn          = data.terraform_remote_state.shared.outputs.supabase_anon_key_secret_arn
+  supabase_service_role_key_secret_arn  = data.terraform_remote_state.shared.outputs.supabase_service_role_key_secret_arn
+
+  # S3 Storage (from shared workspace)
+  s3_bucket_name = data.terraform_remote_state.shared.outputs.s3_scans_bucket_name
 
   # CloudWatch (from shared workspace)
   cloudwatch_log_group_name = data.terraform_remote_state.shared.outputs.cloudwatch_log_group_name
@@ -124,17 +132,6 @@ module "ecs_service" {
 # VERCEL INTEGRATION - Inject backend URL into frontend preview
 # ============================================================================
 
-resource "vercel_project_environment_variable" "websocket_url" {
-  count = var.vercel_project_id != "" && var.git_branch != "" ? 1 : 0
-
-  project_id = var.vercel_project_id
-  team_id    = var.vercel_team_id
-  key        = "NEXT_PUBLIC_WEBSOCKET_URL"
-  value      = "http://${module.ecs_service.alb_dns_name}"
-  target     = ["preview"]
-  git_branch = var.git_branch
-}
-
 resource "vercel_project_environment_variable" "backend_url" {
   count = var.vercel_project_id != "" && var.git_branch != "" ? 1 : 0
 
@@ -155,4 +152,27 @@ resource "vercel_project_environment_variable" "pr_number_env" {
   value      = var.pr_number
   target     = ["preview"]
   git_branch = var.git_branch
+}
+
+# ============================================================================
+# VERCEL DEPLOYMENT - Auto-deploy preview for PR
+# ============================================================================
+
+resource "vercel_deployment" "pr_preview" {
+  count = var.vercel_project_id != "" && var.git_branch != "" ? 1 : 0
+
+  project_id = var.vercel_project_id
+  team_id    = var.vercel_team_id
+
+  # Deploy from the PR branch
+  ref = var.git_branch
+
+  # Create preview deployment, NOT production
+  production = false
+
+  # Ensure env vars are set before deployment
+  depends_on = [
+    vercel_project_environment_variable.backend_url,
+    vercel_project_environment_variable.pr_number_env
+  ]
 }

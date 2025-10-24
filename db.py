@@ -5,33 +5,24 @@ This module provides Supabase client and S3 client initialization
 along with helper functions for database operations and S3 file management.
 """
 
-import os
 from typing import Optional
-from dotenv import load_dotenv
 from supabase import create_client, Client
 import boto3
 from botocore.exceptions import ClientError
 from clerk_backend_api import Clerk
-from clerk_backend_api.jwks_helpers import AuthenticateRequestOptions
-import jwt
 
-# Load environment variables
-load_dotenv()
-
-# Clerk Configuration
-CLERK_SECRET_KEY = os.getenv("CLERK_SECRET_KEY")
-CLERK_PUBLISHABLE_KEY = os.getenv("CLERK_PUBLISHABLE_KEY")
-
-# Supabase Configuration
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
-SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-
-# S3 Configuration
-AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
-AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
-AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
-S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
+# Import configuration from centralized config module
+from config import (
+    CLERK_SECRET_KEY,
+    CLERK_PUBLISHABLE_KEY,
+    SUPABASE_URL,
+    SUPABASE_ANON_KEY,
+    SUPABASE_SERVICE_ROLE_KEY,
+    AWS_ACCESS_KEY_ID,
+    AWS_SECRET_ACCESS_KEY,
+    AWS_REGION,
+    S3_BUCKET_NAME
+)
 
 
 def get_supabase_client(use_service_role: bool = False) -> Client:

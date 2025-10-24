@@ -233,29 +233,31 @@ jobs:
             -var="pr_number=${{ github.event.pull_request.number }}" \
             -var="git_branch=${{ github.head_ref }}"
 
-      - name: Get ALB URL
-        id: get-url
+      - name: Get deployment URLs
+        id: get-urls
         working-directory: infra/environments/pr-template
         env:
           TF_WORKSPACE: ${{ env.TF_WORKSPACE_PREFIX }}-${{ github.event.pull_request.number }}
         run: |
           ALB_URL=$(terraform output -raw alb_url || echo "pending")
+          VERCEL_URL=$(terraform output -raw vercel_preview_url || echo "pending")
           echo "alb_url=$ALB_URL" >> $GITHUB_OUTPUT
+          echo "vercel_url=$VERCEL_URL" >> $GITHUB_OUTPUT
 
       - name: Comment PR with environment URL
         uses: actions/github-script@v7
         with:
           script: |
             const prNumber = context.payload.pull_request.number;
-            const albUrl = '${{ steps.get-url.outputs.alb_url }}';
+            const albUrl = '${{ steps.get-urls.outputs.alb_url }}';
+            const vercelUrl = '${{ steps.get-urls.outputs.vercel_url }}';
 
             const comment = `## 🚀 PR Environment Deployed
 
             Your PR environment has been successfully deployed!
 
             **Backend URL:** ${albUrl}
-            **Frontend Preview:** Vercel will auto-deploy when environment variables are set
-            - Check [Vercel Deployments](https://vercel.com) for preview URL
+            **Frontend Preview:** ${vercelUrl}
             - Branch: \`${{ github.head_ref }}\`
 
             **Details:**
@@ -264,7 +266,6 @@ jobs:
             - Workspace: \`${{ env.TF_WORKSPACE_PREFIX }}-${prNumber}\`
 
             **Environment Variables Injected (scoped to branch \`${{ github.head_ref }}\`):**
-            - \`NEXT_PUBLIC_WEBSOCKET_URL\`: ${albUrl}
             - \`NEXT_PUBLIC_BACKEND_URL\`: ${albUrl}
             - \`NEXT_PUBLIC_PR_NUMBER\`: ${prNumber}
 
@@ -310,6 +311,7 @@ jobs:
       - name: Deployment summary
         run: |
           echo "## PR Environment Deployed" >> $GITHUB_STEP_SUMMARY
-          echo "**URL:** ${{ steps.get-url.outputs.alb_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Backend URL:** ${{ steps.get-urls.outputs.alb_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Frontend URL:** ${{ steps.get-urls.outputs.vercel_url }}" >> $GITHUB_STEP_SUMMARY
           echo "**Image:** ${{ steps.build-image.outputs.image }}" >> $GITHUB_STEP_SUMMARY
           echo "**PR:** #${{ github.event.pull_request.number }}" >> $GITHUB_STEP_SUMMARY
