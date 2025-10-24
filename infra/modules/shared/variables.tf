@@ -21,6 +21,36 @@ variable "serpapi_key" {
   sensitive   = true
 }
 
+variable "clerk_secret_key" {
+  description = "Clerk secret key for authentication"
+  type        = string
+  sensitive   = true
+}
+
+variable "clerk_publishable_key" {
+  description = "Clerk publishable key"
+  type        = string
+  sensitive   = true
+}
+
+variable "supabase_url" {
+  description = "Supabase project URL"
+  type        = string
+  sensitive   = true
+}
+
+variable "supabase_anon_key" {
+  description = "Supabase anonymous key"
+  type        = string
+  sensitive   = true
+}
+
+variable "supabase_service_role_key" {
+  description = "Supabase service role key"
+  type        = string
+  sensitive   = true
+}
+
 variable "log_retention_days" {
   description = "CloudWatch log retention in days"
   type        = number

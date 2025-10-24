@@ -88,9 +88,17 @@ module "ecs_service" {
   task_role_arn           = data.terraform_remote_state.shared.outputs.ecs_task_role_arn
 
   # Secrets (from shared workspace)
-  llama_api_key_secret_arn  = data.terraform_remote_state.shared.outputs.llama_api_key_secret_arn
-  steel_api_key_secret_arn  = data.terraform_remote_state.shared.outputs.steel_api_key_secret_arn
-  serpapi_key_secret_arn    = data.terraform_remote_state.shared.outputs.serpapi_key_secret_arn
+  llama_api_key_secret_arn              = data.terraform_remote_state.shared.outputs.llama_api_key_secret_arn
+  steel_api_key_secret_arn              = data.terraform_remote_state.shared.outputs.steel_api_key_secret_arn
+  serpapi_key_secret_arn                = data.terraform_remote_state.shared.outputs.serpapi_key_secret_arn
+  clerk_secret_key_arn                  = data.terraform_remote_state.shared.outputs.clerk_secret_key_arn
+  clerk_publishable_key_arn             = data.terraform_remote_state.shared.outputs.clerk_publishable_key_arn
+  supabase_url_secret_arn               = data.terraform_remote_state.shared.outputs.supabase_url_secret_arn
+  supabase_anon_key_secret_arn          = data.terraform_remote_state.shared.outputs.supabase_anon_key_secret_arn
+  supabase_service_role_key_secret_arn  = data.terraform_remote_state.shared.outputs.supabase_service_role_key_secret_arn
+
+  # S3 Storage (from shared workspace)
+  s3_bucket_name = data.terraform_remote_state.shared.outputs.s3_scans_bucket_name
 
   # CloudWatch (from shared workspace)
   cloudwatch_log_group_name = data.terraform_remote_state.shared.outputs.cloudwatch_log_group_name
@@ -116,12 +124,12 @@ module "ecs_service" {
 # VERCEL INTEGRATION
 # ============================================================================
 
-resource "vercel_project_environment_variable" "websocket_url" {
+resource "vercel_project_environment_variable" "backend_url" {
   count = var.vercel_project_id != "" ? 1 : 0
 
   project_id = var.vercel_project_id
   team_id    = var.vercel_team_id
-  key        = "NEXT_PUBLIC_WEBSOCKET_URL"
+  key        = "NEXT_PUBLIC_BACKEND_URL"
   value      = "http://${module.ecs_service.alb_dns_name}"
   target     = ["production"]
 }

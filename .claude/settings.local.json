@@ -19,7 +19,8 @@
       "Bash(supabase init:*)",
       "Bash(python -m py_compile:*)",
       "Bash(python:*)",
-      "Bash(source .venv/bin/activate)"
+      "Bash(source .venv/bin/activate)",
+      "WebFetch(domain:github.com)"
     ],
     "deny": [],
     "ask": []

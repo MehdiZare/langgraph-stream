@@ -64,6 +64,12 @@ module "shared" {
   steel_api_key = var.steel_api_key
   serpapi_key   = var.serpapi_key
 
+  clerk_secret_key          = var.clerk_secret_key
+  clerk_publishable_key     = var.clerk_publishable_key
+  supabase_url              = var.supabase_url
+  supabase_anon_key         = var.supabase_anon_key
+  supabase_service_role_key = var.supabase_service_role_key
+
   log_retention_days = var.log_retention_days
 
   tags = {

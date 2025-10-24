@@ -33,6 +33,31 @@ output "serpapi_key_secret_arn" {
   value       = aws_secretsmanager_secret.serpapi_key.arn
 }
 
+output "clerk_secret_key_arn" {
+  description = "ARN of the Clerk secret key"
+  value       = aws_secretsmanager_secret.clerk_secret_key.arn
+}
+
+output "clerk_publishable_key_arn" {
+  description = "ARN of the Clerk publishable key"
+  value       = aws_secretsmanager_secret.clerk_publishable_key.arn
+}
+
+output "supabase_url_secret_arn" {
+  description = "ARN of the Supabase URL secret"
+  value       = aws_secretsmanager_secret.supabase_url.arn
+}
+
+output "supabase_anon_key_secret_arn" {
+  description = "ARN of the Supabase anon key secret"
+  value       = aws_secretsmanager_secret.supabase_anon_key.arn
+}
+
+output "supabase_service_role_key_secret_arn" {
+  description = "ARN of the Supabase service role key secret"
+  value       = aws_secretsmanager_secret.supabase_service_role_key.arn
+}
+
 output "cloudwatch_log_group_name" {
   description = "Name of the CloudWatch log group"
   value       = aws_cloudwatch_log_group.app.name

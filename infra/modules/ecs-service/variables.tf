@@ -87,6 +87,37 @@ variable "serpapi_key_secret_arn" {
   type        = string
 }
 
+variable "clerk_secret_key_arn" {
+  description = "ARN of the Clerk secret key"
+  type        = string
+}
+
+variable "clerk_publishable_key_arn" {
+  description = "ARN of the Clerk publishable key"
+  type        = string
+}
+
+variable "supabase_url_secret_arn" {
+  description = "ARN of the Supabase URL secret"
+  type        = string
+}
+
+variable "supabase_anon_key_secret_arn" {
+  description = "ARN of the Supabase anon key secret"
+  type        = string
+}
+
+variable "supabase_service_role_key_secret_arn" {
+  description = "ARN of the Supabase service role key secret"
+  type        = string
+}
+
+# S3 Storage
+variable "s3_bucket_name" {
+  description = "Name of the S3 bucket for scan data"
+  type        = string
+}
+
 # CloudWatch
 variable "cloudwatch_log_group_name" {
   description = "Name of the CloudWatch log group"

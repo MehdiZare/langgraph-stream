@@ -32,3 +32,8 @@ output "vercel_project_id" {
   description = "Vercel project ID (if configured)"
   value       = var.vercel_project_id
 }
+
+output "vercel_preview_url" {
+  description = "Vercel preview deployment URL"
+  value       = try(vercel_deployment.pr_preview[0].url, "pending")
+}
