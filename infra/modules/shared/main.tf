@@ -215,12 +215,13 @@ resource "aws_secretsmanager_secret_version" "serpapi_key" {
 
 resource "aws_secretsmanager_secret" "clerk_secret_key" {
   name        = "${var.project_name}/clerk-secret-key"
-  description = "Clerk secret key for ${var.project_name}"
+  description = "Clerk secret key for NON-PRODUCTION environments (dev, preview, PR). Production uses separate credentials."
 
   tags = merge(
     var.tags,
     {
-      Name = "${var.project_name}-clerk-secret-key"
+      Name        = "${var.project_name}-clerk-secret-key"
+      Environment = "nonprod"
     }
   )
 }
@@ -232,12 +233,13 @@ resource "aws_secretsmanager_secret_version" "clerk_secret_key" {
 
 resource "aws_secretsmanager_secret" "clerk_publishable_key" {
   name        = "${var.project_name}/clerk-publishable-key"
-  description = "Clerk publishable key for ${var.project_name}"
+  description = "Clerk publishable key for NON-PRODUCTION environments (dev, preview, PR). Production uses separate credentials."
 
   tags = merge(
     var.tags,
     {
-      Name = "${var.project_name}-clerk-publishable-key"
+      Name        = "${var.project_name}-clerk-publishable-key"
+      Environment = "nonprod"
     }
   )
 }

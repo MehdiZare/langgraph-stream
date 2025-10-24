@@ -59,8 +59,12 @@ data "terraform_remote_state" "shared" {
 }
 
 # ============================================================================
-# PRODUCTION-SPECIFIC SECRETS
-# Production uses its own Clerk instance (separate from preview/dev)
+# PRODUCTION-SPECIFIC CLERK SECRETS
+# ============================================================================
+# Architecture:
+# - Shared workspace contains default Clerk credentials for non-prod (dev/preview/PR)
+# - Production overrides with its own Clerk instance for security isolation
+# - This ensures production auth is completely separate from test/dev environments
 # ============================================================================
 
 resource "aws_secretsmanager_secret" "clerk_secret_key_prod" {
@@ -98,7 +102,7 @@ resource "aws_secretsmanager_secret_version" "clerk_publishable_key_prod" {
 # Grant ECS task execution role access to production Clerk secrets
 resource "aws_iam_role_policy" "ecs_prod_clerk_secrets_access" {
   name = "${var.project_name}-prod-clerk-secrets-access"
-  role = data.terraform_remote_state.shared.outputs.ecs_task_execution_role_arn
+  role = data.terraform_remote_state.shared.outputs.ecs_task_execution_role_name
 
   policy = jsonencode({
     Version = "2012-10-17"
