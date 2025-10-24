@@ -25,7 +25,7 @@ output "pr_number" {
 
 output "vercel_env_vars_created" {
   description = "Whether Vercel environment variables were created"
-  value       = length(vercel_project_environment_variable.websocket_url) > 0
+  value       = length(vercel_project_environment_variable.backend_url) > 0
 }
 
 output "vercel_project_id" {
