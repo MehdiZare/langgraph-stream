@@ -20,7 +20,16 @@
       "Bash(python -m py_compile:*)",
       "Bash(python:*)",
       "Bash(source .venv/bin/activate)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(make docker-build:*)",
+      "Bash(make docker-up:*)",
+      "Bash(docker-compose logs:*)",
+      "Bash(make docker-down:*)",
+      "Bash(make docker-logs-app:*)",
+      "Bash(curl:*)",
+      "Bash(supabase db pull:*)",
+      "Bash(supabase db push:*)",
+      "Bash(supabase migration:*)"
     ],
     "deny": [],
     "ask": []

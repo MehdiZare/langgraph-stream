@@ -59,6 +59,65 @@ data "terraform_remote_state" "shared" {
 }
 
 # ============================================================================
+# PRODUCTION-SPECIFIC SECRETS
+# Production uses its own Clerk instance (separate from preview/dev)
+# ============================================================================
+
+resource "aws_secretsmanager_secret" "clerk_secret_key_prod" {
+  name        = "${var.project_name}/clerk-secret-key-prod"
+  description = "Clerk secret key for production environment"
+
+  tags = {
+    Environment = "production"
+    Project     = var.project_name
+    ManagedBy   = "Terraform"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "clerk_secret_key_prod" {
+  secret_id     = aws_secretsmanager_secret.clerk_secret_key_prod.id
+  secret_string = var.clerk_secret_key_prod
+}
+
+resource "aws_secretsmanager_secret" "clerk_publishable_key_prod" {
+  name        = "${var.project_name}/clerk-publishable-key-prod"
+  description = "Clerk publishable key for production environment"
+
+  tags = {
+    Environment = "production"
+    Project     = var.project_name
+    ManagedBy   = "Terraform"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "clerk_publishable_key_prod" {
+  secret_id     = aws_secretsmanager_secret.clerk_publishable_key_prod.id
+  secret_string = var.clerk_publishable_key_prod
+}
+
+# Grant ECS task execution role access to production Clerk secrets
+resource "aws_iam_role_policy" "ecs_prod_clerk_secrets_access" {
+  name = "${var.project_name}-prod-clerk-secrets-access"
+  role = data.terraform_remote_state.shared.outputs.ecs_task_execution_role_arn
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = [
+          aws_secretsmanager_secret.clerk_secret_key_prod.arn,
+          aws_secretsmanager_secret.clerk_publishable_key_prod.arn
+        ]
+      }
+    ]
+  })
+}
+
+# ============================================================================
 # ECS SERVICE MODULE - Production
 # ============================================================================
 
@@ -91,11 +150,13 @@ module "ecs_service" {
   llama_api_key_secret_arn              = data.terraform_remote_state.shared.outputs.llama_api_key_secret_arn
   steel_api_key_secret_arn              = data.terraform_remote_state.shared.outputs.steel_api_key_secret_arn
   serpapi_key_secret_arn                = data.terraform_remote_state.shared.outputs.serpapi_key_secret_arn
-  clerk_secret_key_arn                  = data.terraform_remote_state.shared.outputs.clerk_secret_key_arn
-  clerk_publishable_key_arn             = data.terraform_remote_state.shared.outputs.clerk_publishable_key_arn
   supabase_url_secret_arn               = data.terraform_remote_state.shared.outputs.supabase_url_secret_arn
   supabase_anon_key_secret_arn          = data.terraform_remote_state.shared.outputs.supabase_anon_key_secret_arn
   supabase_service_role_key_secret_arn  = data.terraform_remote_state.shared.outputs.supabase_service_role_key_secret_arn
+
+  # Production-specific Clerk secrets (NOT from shared workspace)
+  clerk_secret_key_arn      = aws_secretsmanager_secret.clerk_secret_key_prod.arn
+  clerk_publishable_key_arn = aws_secretsmanager_secret.clerk_publishable_key_prod.arn
 
   # S3 Storage (from shared workspace)
   s3_bucket_name = data.terraform_remote_state.shared.outputs.s3_scans_bucket_name

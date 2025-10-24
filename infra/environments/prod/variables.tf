@@ -74,6 +74,20 @@ variable "enable_container_insights" {
   default     = false
 }
 
+# Production-specific Secrets
+# Note: Preview/dev environments use separate Clerk instance from shared workspace
+variable "clerk_secret_key_prod" {
+  description = "Clerk secret key for PRODUCTION environment (set in Terraform Cloud as sensitive variable)"
+  type        = string
+  sensitive   = true
+}
+
+variable "clerk_publishable_key_prod" {
+  description = "Clerk publishable key for PRODUCTION environment (set in Terraform Cloud as sensitive variable)"
+  type        = string
+  sensitive   = true
+}
+
 # Vercel Integration
 variable "vercel_project_id" {
   description = "Vercel project ID (found in Project Settings → General)"
