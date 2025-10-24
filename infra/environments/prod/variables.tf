@@ -74,16 +74,25 @@ variable "enable_container_insights" {
   default     = false
 }
 
-# Production-specific Secrets
-# Note: Preview/dev environments use separate Clerk instance from shared workspace
+# ============================================================================
+# Production-specific Clerk Secrets
+# ============================================================================
+# Production uses its own Clerk instance, separate from the default/shared
+# Clerk instance used by dev/preview/PR environments.
+#
+# Priority System:
+# - Shared workspace: Contains default Clerk credentials for non-prod (dev/preview/PR)
+# - Production workspace: Overrides with production-specific Clerk credentials (set below)
+# ============================================================================
+
 variable "clerk_secret_key_prod" {
-  description = "Clerk secret key for PRODUCTION environment (set in Terraform Cloud as sensitive variable)"
+  description = "Clerk secret key for PRODUCTION environment ONLY. Overrides the default Clerk instance in shared workspace. (set in Terraform Cloud as sensitive variable)"
   type        = string
   sensitive   = true
 }
 
 variable "clerk_publishable_key_prod" {
-  description = "Clerk publishable key for PRODUCTION environment (set in Terraform Cloud as sensitive variable)"
+  description = "Clerk publishable key for PRODUCTION environment ONLY. Overrides the default Clerk instance in shared workspace. (set in Terraform Cloud as sensitive variable)"
   type        = string
   sensitive   = true
 }

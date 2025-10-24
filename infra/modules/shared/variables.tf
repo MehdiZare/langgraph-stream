@@ -22,13 +22,13 @@ variable "serpapi_key" {
 }
 
 variable "clerk_secret_key" {
-  description = "Clerk secret key for authentication"
+  description = "Clerk secret key for NON-PRODUCTION environments (dev, preview, PR). Production environments use separate Clerk credentials."
   type        = string
   sensitive   = true
 }
 
 variable "clerk_publishable_key" {
-  description = "Clerk publishable key"
+  description = "Clerk publishable key for NON-PRODUCTION environments (dev, preview, PR). Production environments use separate Clerk credentials."
   type        = string
   sensitive   = true
 }

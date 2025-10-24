@@ -43,13 +43,13 @@ variable "serpapi_key" {
 }
 
 variable "clerk_secret_key" {
-  description = "Clerk secret key (set in Terraform Cloud as sensitive variable)"
+  description = "Clerk secret key for NON-PRODUCTION environments (dev, preview, PR). Production uses separate credentials. (set in Terraform Cloud as sensitive variable)"
   type        = string
   sensitive   = true
 }
 
 variable "clerk_publishable_key" {
-  description = "Clerk publishable key (set in Terraform Cloud as sensitive variable)"
+  description = "Clerk publishable key for NON-PRODUCTION environments (dev, preview, PR). Production uses separate credentials. (set in Terraform Cloud as sensitive variable)"
   type        = string
   sensitive   = true
 }
