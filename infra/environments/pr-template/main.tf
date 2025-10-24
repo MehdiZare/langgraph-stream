@@ -17,6 +17,10 @@ terraform {
       source  = "vercel/vercel"
       version = "~> 2.0"
     }
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 4.0"
+    }
   }
 
   # Workspace is set via TF_WORKSPACE environment variable by GitHub Actions
@@ -45,6 +49,10 @@ provider "vercel" {
   # API token set via VERCEL_API_TOKEN environment variable in Terraform Cloud
 }
 
+provider "cloudflare" {
+  # API token set via CLOUDFLARE_API_TOKEN environment variable in Terraform Cloud
+}
+
 # ============================================================================
 # DATA SOURCES - Fetch shared resources from shared workspace
 # ============================================================================
@@ -58,6 +66,21 @@ data "terraform_remote_state" "shared" {
       name = "roboad-fast-ws-shared"
     }
   }
+}
+
+# ============================================================================
+# CLOUDFLARE DNS RECORD - api-pr-{number}.roboad.ai → PR ALB
+# ============================================================================
+
+resource "cloudflare_record" "api_pr" {
+  zone_id = data.terraform_remote_state.shared.outputs.cloudflare_zone_id
+  name    = "api-pr-${var.pr_number}"
+  content = module.ecs_service.alb_dns_name
+  type    = "CNAME"
+  ttl     = 300
+  proxied = false  # Direct connection to ALB (no Cloudflare proxy for WebSocket support)
+
+  comment = "PR #${var.pr_number} environment - managed by Terraform"
 }
 
 # ============================================================================
@@ -107,6 +130,8 @@ module "ecs_service" {
 
   # ALB
   alb_idle_timeout = var.alb_idle_timeout
+  certificate_arn  = data.terraform_remote_state.shared.outputs.acm_certificate_arn
+  domain_name      = "api-pr-${var.pr_number}.roboad.ai"
 
   # Auto Scaling - Disabled for PR environments
   enable_autoscaling = false
@@ -138,9 +163,8 @@ resource "vercel_project_environment_variable" "backend_url" {
   project_id = var.vercel_project_id
   team_id    = var.vercel_team_id
   key        = "NEXT_PUBLIC_BACKEND_URL"
-  value      = "http://${module.ecs_service.alb_dns_name}"
+  value      = module.ecs_service.service_url
   target     = ["preview"]
-  git_branch = var.git_branch
 }
 
 resource "vercel_project_environment_variable" "pr_number_env" {
@@ -151,7 +175,6 @@ resource "vercel_project_environment_variable" "pr_number_env" {
   key        = "NEXT_PUBLIC_PR_NUMBER"
   value      = var.pr_number
   target     = ["preview"]
-  git_branch = var.git_branch
 }
 
 # ============================================================================

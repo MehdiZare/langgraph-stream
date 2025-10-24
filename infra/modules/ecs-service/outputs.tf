@@ -3,6 +3,16 @@ output "alb_dns_name" {
   value       = aws_lb.main.dns_name
 }
 
+output "service_url" {
+  description = "Full service URL (uses custom domain if provided, otherwise ALB DNS)"
+  value       = var.domain_name != "" ? "https://${var.domain_name}" : (var.certificate_arn != "" ? "https://${aws_lb.main.dns_name}" : "http://${aws_lb.main.dns_name}")
+}
+
+output "domain_name" {
+  description = "Custom domain name for this service (if configured)"
+  value       = var.domain_name
+}
+
 output "alb_arn" {
   description = "ARN of the Application Load Balancer"
   value       = aws_lb.main.arn

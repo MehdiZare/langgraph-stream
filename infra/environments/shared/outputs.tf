@@ -97,3 +97,13 @@ output "cloudwatch_log_group_name" {
   description = "Name of the CloudWatch log group"
   value       = module.shared.cloudwatch_log_group_name
 }
+
+output "acm_certificate_arn" {
+  description = "ARN of the wildcard ACM certificate"
+  value       = aws_acm_certificate_validation.wildcard.certificate_arn
+}
+
+output "cloudflare_zone_id" {
+  description = "Cloudflare zone ID for roboad.ai"
+  value       = data.cloudflare_zone.main.id
+}

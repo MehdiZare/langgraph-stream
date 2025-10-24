@@ -131,6 +131,18 @@ variable "alb_idle_timeout" {
   default     = 300
 }
 
+variable "certificate_arn" {
+  description = "ARN of the ACM certificate for HTTPS (optional, HTTP only if not provided)"
+  type        = string
+  default     = ""
+}
+
+variable "domain_name" {
+  description = "Custom domain name for this service (optional, e.g., api.roboad.ai)"
+  type        = string
+  default     = ""
+}
+
 # Auto Scaling
 variable "enable_autoscaling" {
   description = "Enable auto scaling"
