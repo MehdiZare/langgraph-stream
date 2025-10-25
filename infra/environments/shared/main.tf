@@ -10,11 +10,11 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.80"
+      version = "~> 6.0"
     }
     cloudflare = {
       source  = "cloudflare/cloudflare"
-      version = "~> 4.0"
+      version = "~> 5.0"
     }
   }
 
@@ -128,12 +128,10 @@ resource "cloudflare_record" "cert_validation" {
 
   zone_id = data.cloudflare_zone.main.id
   name    = each.value.name
-  content = each.value.record
+  value   = trimsuffix(each.value.record, ".")
   type    = each.value.type
   ttl     = 60
   proxied = false
-
-  allow_overwrite = true
 
   comment = "ACM certificate validation for ${each.key}"
 }
