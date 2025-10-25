@@ -98,12 +98,15 @@ output "cloudwatch_log_group_name" {
   value       = module.shared.cloudwatch_log_group_name
 }
 
-output "acm_certificate_arn" {
-  description = "ARN of the wildcard ACM certificate"
-  value       = aws_acm_certificate_validation.wildcard.certificate_arn
-}
+# TEMPORARY: Commented out for workspace cleanup
+# Will be restored after workspace is deleted and recreated
 
-output "cloudflare_zone_id" {
-  description = "Cloudflare zone ID for roboad.ai"
-  value       = local.cloudflare_zone_id
-}
+# output "acm_certificate_arn" {
+#   description = "ARN of the wildcard ACM certificate"
+#   value       = aws_acm_certificate_validation.wildcard.certificate_arn
+# }
+
+# output "cloudflare_zone_id" {
+#   description = "Cloudflare zone ID for roboad.ai"
+#   value       = local.cloudflare_zone_id
+# }
