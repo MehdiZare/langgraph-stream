@@ -142,7 +142,7 @@ resource "cloudflare_dns_record" "cert_validation" {
 # Wait for certificate validation
 resource "aws_acm_certificate_validation" "wildcard" {
   certificate_arn         = aws_acm_certificate.wildcard.arn
-  validation_record_fqdns = [for record in cloudflare_dns_record.cert_validation : record.hostname]
+  validation_record_fqdns = [for record in cloudflare_dns_record.cert_validation : record.name]
 }
 
 # ============================================================================
