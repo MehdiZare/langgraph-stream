@@ -245,7 +245,7 @@ jobs:
 
       - name: Deploy frontend to Vercel
         id: deploy-vercel
-        if: vars.FRONTEND_REPO_URL != '' || vars.FRONTEND_REPO_PATH != ''
+        if: secrets.VERCEL_API_TOKEN != ''
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_API_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_TEAM_ID }}
@@ -254,28 +254,28 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           # Install Vercel CLI
+          echo "Installing Vercel CLI..."
           npm install -g vercel@latest
 
-          # Clone or navigate to frontend repository
-          if [ -n "${{ vars.FRONTEND_REPO_URL }}" ]; then
-            echo "Cloning frontend from ${{ vars.FRONTEND_REPO_URL }}"
-            git clone --depth 1 ${{ vars.FRONTEND_REPO_URL }} /tmp/frontend
-            cd /tmp/frontend
-          elif [ -n "${{ vars.FRONTEND_REPO_PATH }}" ]; then
-            echo "Using frontend from ${{ vars.FRONTEND_REPO_PATH }}"
-            cd ${{ vars.FRONTEND_REPO_PATH }}
-          else
-            echo "No frontend repo configured, skipping"
-            exit 0
-          fi
+          # Set environment variables for preview deployments
+          echo "Setting NEXT_PUBLIC_BACKEND_URL for preview environment..."
+          echo "$BACKEND_URL" | vercel env add NEXT_PUBLIC_BACKEND_URL preview \
+            --token=$VERCEL_TOKEN \
+            ${VERCEL_ORG_ID:+--scope=$VERCEL_ORG_ID} \
+            --yes || echo "Environment variable may already exist, continuing..."
 
-          # Deploy to Vercel with backend URL as build-time environment variable
-          echo "Deploying to Vercel with NEXT_PUBLIC_BACKEND_URL=$BACKEND_URL"
+          echo "Setting NEXT_PUBLIC_PR_NUMBER for preview environment..."
+          echo "$PR_NUMBER" | vercel env add NEXT_PUBLIC_PR_NUMBER preview \
+            --token=$VERCEL_TOKEN \
+            ${VERCEL_ORG_ID:+--scope=$VERCEL_ORG_ID} \
+            --yes || echo "Environment variable may already exist, continuing..."
+
+          # Trigger a new deployment
+          echo "Triggering Vercel deployment..."
           DEPLOYMENT_URL=$(vercel deploy \
             --token=$VERCEL_TOKEN \
             ${VERCEL_ORG_ID:+--scope=$VERCEL_ORG_ID} \
-            --build-env NEXT_PUBLIC_BACKEND_URL=$BACKEND_URL \
-            --build-env NEXT_PUBLIC_PR_NUMBER=$PR_NUMBER \
+            --force \
             --yes \
             2>&1 | tee /tmp/vercel-deploy.log | grep -oP 'https://[^\s]+\.vercel\.app' | tail -1)
 
@@ -284,7 +284,7 @@ jobs:
             echo "✅ Deployed to Vercel: $DEPLOYMENT_URL"
           else
             echo "vercel_deployment_url=Deployment in progress" >> $GITHUB_OUTPUT
-            echo "⚠️  Vercel deployment started"
+            echo "⚠️  Vercel deployment started, check logs above for details"
           fi
 
       - name: Comment PR with environment URL
