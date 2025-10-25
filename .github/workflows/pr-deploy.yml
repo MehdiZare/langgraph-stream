@@ -256,25 +256,13 @@ jobs:
           echo "Installing Vercel CLI..."
           npm install -g vercel@latest
 
-          # Set environment variables for preview deployments
-          echo "Setting NEXT_PUBLIC_BACKEND_URL for preview environment..."
-          echo "$BACKEND_URL" | vercel env add NEXT_PUBLIC_BACKEND_URL preview \
-            --token=$VERCEL_TOKEN \
-            ${VERCEL_ORG_ID:+--scope=$VERCEL_ORG_ID} \
-            --yes || echo "Environment variable may already exist, continuing..."
-
-          echo "Setting NEXT_PUBLIC_PR_NUMBER for preview environment..."
-          echo "$PR_NUMBER" | vercel env add NEXT_PUBLIC_PR_NUMBER preview \
-            --token=$VERCEL_TOKEN \
-            ${VERCEL_ORG_ID:+--scope=$VERCEL_ORG_ID} \
-            --yes || echo "Environment variable may already exist, continuing..."
-
-          # Trigger a new deployment
-          echo "Triggering Vercel deployment..."
+          # Deploy to Vercel with build-time environment variables
+          echo "Deploying to Vercel with NEXT_PUBLIC_BACKEND_URL=$BACKEND_URL"
           DEPLOYMENT_URL=$(vercel deploy \
             --token=$VERCEL_TOKEN \
-            ${VERCEL_ORG_ID:+--scope=$VERCEL_ORG_ID} \
-            --force \
+            --scope=$VERCEL_ORG_ID \
+            --build-env NEXT_PUBLIC_BACKEND_URL=$BACKEND_URL \
+            --build-env NEXT_PUBLIC_PR_NUMBER=$PR_NUMBER \
             --yes \
             2>&1 | tee /tmp/vercel-deploy.log | grep -oP 'https://[^\s]+\.vercel\.app' | tail -1)
 
@@ -283,7 +271,7 @@ jobs:
             echo "✅ Deployed to Vercel: $DEPLOYMENT_URL"
           else
             echo "vercel_deployment_url=Deployment in progress" >> $GITHUB_OUTPUT
-            echo "⚠️  Vercel deployment started, check logs above for details"
+            echo "⚠️ Vercel deployment started, check logs above for details"
           fi
 
       - name: Comment PR with environment URL
