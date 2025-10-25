@@ -246,7 +246,7 @@ jobs:
       - name: Checkout frontend repository
         uses: actions/checkout@v5
         with:
-          repository: roboad/roboad-front
+          repository: RoboAdApp/roboad-front-end
           ref: main
           path: frontend
 
