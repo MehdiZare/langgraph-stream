@@ -130,12 +130,12 @@ resource "aws_iam_role_policy" "ecs_prod_clerk_secrets_access" {
 }
 
 # ============================================================================
-# CLOUDFLARE DNS RECORD - prod.api.roboad.ai → Production ALB
+# CLOUDFLARE DNS RECORD - api-prod.roboad.ai → Production ALB
 # ============================================================================
 
 resource "cloudflare_dns_record" "api_prod" {
   zone_id = data.terraform_remote_state.shared.outputs.cloudflare_zone_id
-  name    = "prod.api"
+  name    = "api-prod"
   content = module.ecs_service.alb_dns_name
   type    = "CNAME"
   ttl     = 1  # Automatic TTL when proxied
@@ -194,7 +194,7 @@ module "ecs_service" {
   # ALB - Using Cloudflare SSL, no ACM certificate needed
   alb_idle_timeout = var.alb_idle_timeout
   certificate_arn  = ""  # Empty - using Cloudflare SSL termination
-  domain_name      = "prod.api.roboad.ai"
+  domain_name      = "api-prod.roboad.ai"
 
   # Auto Scaling
   enable_autoscaling        = true

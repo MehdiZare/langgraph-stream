@@ -69,12 +69,12 @@ data "terraform_remote_state" "shared" {
 }
 
 # ============================================================================
-# CLOUDFLARE DNS RECORD - pr-{number}.api.roboad.ai → PR ALB
+# CLOUDFLARE DNS RECORD - api-pr-{number}.roboad.ai → PR ALB
 # ============================================================================
 
 resource "cloudflare_dns_record" "api_pr" {
   zone_id = data.terraform_remote_state.shared.outputs.cloudflare_zone_id
-  name    = "pr-${var.pr_number}.api"
+  name    = "api-pr-${var.pr_number}"
   content = module.ecs_service.alb_dns_name
   type    = "CNAME"
   ttl     = 1  # Automatic TTL when proxied
@@ -131,7 +131,7 @@ module "ecs_service" {
   # ALB - Using Cloudflare SSL, no ACM certificate needed
   alb_idle_timeout = var.alb_idle_timeout
   certificate_arn  = ""  # Empty - using Cloudflare SSL termination
-  domain_name      = "pr-${var.pr_number}.api.roboad.ai"
+  domain_name      = "api-pr-${var.pr_number}.roboad.ai"
 
   # Auto Scaling - Disabled for PR environments
   enable_autoscaling = false
