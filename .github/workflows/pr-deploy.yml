@@ -245,7 +245,7 @@ jobs:
 
       - name: Deploy frontend to Vercel
         id: deploy-vercel
-        if: secrets.VERCEL_API_TOKEN != ''
+        if: ${{ secrets.VERCEL_PROJECT_ID != '' }}
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_API_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_TEAM_ID }}
