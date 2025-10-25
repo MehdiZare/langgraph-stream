@@ -133,7 +133,7 @@ resource "aws_iam_role_policy" "ecs_prod_clerk_secrets_access" {
 # CLOUDFLARE DNS RECORD - api.roboad.ai → Production ALB
 # ============================================================================
 
-resource "cloudflare_record" "api_prod" {
+resource "cloudflare_dns_record" "api_prod" {
   zone_id = data.terraform_remote_state.shared.outputs.cloudflare_zone_id
   name    = "api"
   content = module.ecs_service.alb_dns_name

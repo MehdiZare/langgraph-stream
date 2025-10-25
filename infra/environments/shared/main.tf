@@ -117,7 +117,7 @@ resource "aws_acm_certificate" "wildcard" {
 }
 
 # Cloudflare DNS validation records
-resource "cloudflare_record" "cert_validation" {
+resource "cloudflare_dns_record" "cert_validation" {
   for_each = {
     for dvo in aws_acm_certificate.wildcard.domain_validation_options : dvo.domain_name => {
       name   = dvo.resource_record_name
@@ -139,7 +139,7 @@ resource "cloudflare_record" "cert_validation" {
 # Wait for certificate validation
 resource "aws_acm_certificate_validation" "wildcard" {
   certificate_arn         = aws_acm_certificate.wildcard.arn
-  validation_record_fqdns = [for record in cloudflare_record.cert_validation : record.hostname]
+  validation_record_fqdns = [for record in cloudflare_dns_record.cert_validation : record.hostname]
 }
 
 # ============================================================================
