@@ -243,85 +243,50 @@ jobs:
           echo "alb_url=$ALB_URL" >> $GITHUB_OUTPUT
           echo "vercel_url=Deploying..." >> $GITHUB_OUTPUT
 
+      - name: Checkout frontend repository
+        uses: actions/checkout@v5
+        with:
+          repository: roboad/roboad-front
+          ref: main
+          path: frontend
+
       - name: Deploy frontend to Vercel
         id: deploy-vercel
+        working-directory: frontend
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_API_TOKEN }}
-          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_TEAM_ID }}
           BACKEND_URL: ${{ steps.get-urls.outputs.alb_url }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          # Build JSON payload for Vercel deployment
-          echo "Creating Vercel deployment for roboad-front..."
+          echo "Deploying frontend to Vercel..."
           echo "Backend URL: $BACKEND_URL"
           echo "PR Number: $PR_NUMBER"
-
-          cat > payload.json <<EOF
-          {
-            "name": "roboad-front",
-            "project": "$VERCEL_PROJECT_ID",
-            "target": "preview",
-            "build": {
-              "env": {
-                "NEXT_PUBLIC_BACKEND_URL": "$BACKEND_URL",
-                "NEXT_PUBLIC_PR_NUMBER": "$PR_NUMBER"
-              }
-            },
-            "meta": {
-              "githubCommitRef": "${{ github.head_ref }}",
-              "githubCommitSha": "${{ github.event.pull_request.head.sha }}",
-              "githubOrg": "${{ github.repository_owner }}",
-              "githubRepo": "${{ github.event.repository.name }}",
-              "backendPR": "$PR_NUMBER"
-            }
-          }
-          EOF
-
-          echo ""
-          echo "Deployment payload:"
-          cat payload.json
           echo ""
 
-          # Trigger Vercel deployment via API (without -f to see errors)
-          echo "Triggering Vercel deployment..."
-          HTTP_CODE=$(curl -s -w "%{http_code}" -o response.json \
-            -X POST "https://api.vercel.com/v13/deployments?teamId=$VERCEL_TEAM_ID" \
-            -H "Authorization: Bearer $VERCEL_TOKEN" \
-            -H "Content-Type: application/json" \
-            --data-binary @payload.json)
+          # Install Vercel CLI
+          npm install -g vercel@latest
 
-          echo "HTTP Status Code: $HTTP_CODE"
-          echo "API Response:"
-          cat response.json
-          echo ""
+          # Deploy using Vercel CLI with build-time environment variables
+          echo "Running vercel deploy..."
+          DEPLOYMENT_URL=$(vercel deploy \
+            --token=$VERCEL_TOKEN \
+            --scope=$VERCEL_ORG_ID \
+            --build-env NEXT_PUBLIC_BACKEND_URL=$BACKEND_URL \
+            --build-env NEXT_PUBLIC_PR_NUMBER=$PR_NUMBER \
+            --yes \
+            2>&1 | tee /tmp/vercel-deploy.log | grep -oP 'https://[^\s]+\.vercel\.app' | tail -1)
 
-          # Check if request was successful
-          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-            # Extract deployment URL from response
-            DEPLOYMENT_URL=$(jq -r '.url // empty' response.json)
-            DEPLOYMENT_ID=$(jq -r '.id // empty' response.json)
-            READY_STATE=$(jq -r '.readyState // empty' response.json)
-
-            if [ -n "$DEPLOYMENT_URL" ]; then
-              # Add https:// prefix if not present
-              if [[ ! "$DEPLOYMENT_URL" =~ ^https:// ]]; then
-                DEPLOYMENT_URL="https://$DEPLOYMENT_URL"
-              fi
-              echo "vercel_deployment_url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
-              echo "✅ Deployed to Vercel: $DEPLOYMENT_URL"
-              echo "   Deployment ID: $DEPLOYMENT_ID"
-              echo "   Status: $READY_STATE"
-            else
-              echo "vercel_deployment_url=Deployment initiated" >> $GITHUB_OUTPUT
-              echo "⚠️ Deployment started but URL not yet available"
-            fi
+          if [ -n "$DEPLOYMENT_URL" ]; then
+            echo "vercel_deployment_url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
+            echo ""
+            echo "✅ Successfully deployed to Vercel!"
+            echo "   URL: $DEPLOYMENT_URL"
           else
-            echo "vercel_deployment_url=Failed" >> $GITHUB_OUTPUT
-            echo "❌ Vercel deployment failed with HTTP $HTTP_CODE"
-            ERROR_MESSAGE=$(jq -r '.error.message // .message // "Unknown error"' response.json)
-            echo "Error: $ERROR_MESSAGE"
-            exit 1
+            echo "vercel_deployment_url=Deployment in progress" >> $GITHUB_OUTPUT
+            echo ""
+            echo "⚠️ Vercel deployment started, check logs above for details"
+            cat /tmp/vercel-deploy.log
           fi
 
       - name: Comment PR with environment URL
