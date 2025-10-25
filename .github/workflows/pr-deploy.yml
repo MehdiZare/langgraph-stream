@@ -254,17 +254,14 @@ jobs:
         run: |
           # Build JSON payload for Vercel deployment
           echo "Creating Vercel deployment for roboad-front..."
+          echo "Backend URL: $BACKEND_URL"
+          echo "PR Number: $PR_NUMBER"
 
           cat > payload.json <<EOF
           {
             "name": "roboad-front",
             "project": "$VERCEL_PROJECT_ID",
             "target": "preview",
-            "gitSource": {
-              "type": "github",
-              "repoId": "$VERCEL_PROJECT_ID",
-              "ref": "main"
-            },
             "build": {
               "env": {
                 "NEXT_PUBLIC_BACKEND_URL": "$BACKEND_URL",
@@ -281,32 +278,50 @@ jobs:
           }
           EOF
 
+          echo ""
           echo "Deployment payload:"
           cat payload.json
+          echo ""
 
-          # Trigger Vercel deployment via API
+          # Trigger Vercel deployment via API (without -f to see errors)
           echo "Triggering Vercel deployment..."
-          RESPONSE=$(curl -f -s -X POST "https://api.vercel.com/v13/deployments?teamId=$VERCEL_TEAM_ID" \
+          HTTP_CODE=$(curl -s -w "%{http_code}" -o response.json \
+            -X POST "https://api.vercel.com/v13/deployments?teamId=$VERCEL_TEAM_ID" \
             -H "Authorization: Bearer $VERCEL_TOKEN" \
             -H "Content-Type: application/json" \
             --data-binary @payload.json)
 
-          # Extract deployment URL from response
-          DEPLOYMENT_URL=$(echo "$RESPONSE" | jq -r '.url // empty')
-          DEPLOYMENT_ID=$(echo "$RESPONSE" | jq -r '.id // empty')
+          echo "HTTP Status Code: $HTTP_CODE"
+          echo "API Response:"
+          cat response.json
+          echo ""
 
-          if [ -n "$DEPLOYMENT_URL" ]; then
-            # Add https:// prefix if not present
-            if [[ ! "$DEPLOYMENT_URL" =~ ^https:// ]]; then
-              DEPLOYMENT_URL="https://$DEPLOYMENT_URL"
+          # Check if request was successful
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            # Extract deployment URL from response
+            DEPLOYMENT_URL=$(jq -r '.url // empty' response.json)
+            DEPLOYMENT_ID=$(jq -r '.id // empty' response.json)
+            READY_STATE=$(jq -r '.readyState // empty' response.json)
+
+            if [ -n "$DEPLOYMENT_URL" ]; then
+              # Add https:// prefix if not present
+              if [[ ! "$DEPLOYMENT_URL" =~ ^https:// ]]; then
+                DEPLOYMENT_URL="https://$DEPLOYMENT_URL"
+              fi
+              echo "vercel_deployment_url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
+              echo "✅ Deployed to Vercel: $DEPLOYMENT_URL"
+              echo "   Deployment ID: $DEPLOYMENT_ID"
+              echo "   Status: $READY_STATE"
+            else
+              echo "vercel_deployment_url=Deployment initiated" >> $GITHUB_OUTPUT
+              echo "⚠️ Deployment started but URL not yet available"
             fi
-            echo "vercel_deployment_url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
-            echo "✅ Deployed to Vercel: $DEPLOYMENT_URL"
-            echo "   Deployment ID: $DEPLOYMENT_ID"
           else
-            echo "vercel_deployment_url=Deployment initiated" >> $GITHUB_OUTPUT
-            echo "⚠️ Vercel deployment started, URL pending"
-            echo "Response: $RESPONSE"
+            echo "vercel_deployment_url=Failed" >> $GITHUB_OUTPUT
+            echo "❌ Vercel deployment failed with HTTP $HTTP_CODE"
+            ERROR_MESSAGE=$(jq -r '.error.message // .message // "Unknown error"' response.json)
+            echo "Error: $ERROR_MESSAGE"
+            exit 1
           fi
 
       - name: Comment PR with environment URL
