@@ -130,16 +130,16 @@ resource "aws_iam_role_policy" "ecs_prod_clerk_secrets_access" {
 }
 
 # ============================================================================
-# CLOUDFLARE DNS RECORD - api.roboad.ai → Production ALB
+# CLOUDFLARE DNS RECORD - prod.api.roboad.ai → Production ALB
 # ============================================================================
 
 resource "cloudflare_dns_record" "api_prod" {
   zone_id = data.terraform_remote_state.shared.outputs.cloudflare_zone_id
-  name    = "api"
+  name    = "prod.api"
   content = module.ecs_service.alb_dns_name
   type    = "CNAME"
-  ttl     = 300
-  proxied = false  # Direct connection to ALB (no Cloudflare proxy for WebSocket support)
+  ttl     = 1  # Automatic TTL when proxied
+  proxied = true  # Enable Cloudflare proxy for SSL termination and Enterprise features
 
   comment = "Production API endpoint - managed by Terraform"
 }
@@ -191,10 +191,10 @@ module "ecs_service" {
   # CloudWatch (from shared workspace)
   cloudwatch_log_group_name = data.terraform_remote_state.shared.outputs.cloudwatch_log_group_name
 
-  # ALB
+  # ALB - Using Cloudflare SSL, no ACM certificate needed
   alb_idle_timeout = var.alb_idle_timeout
-  certificate_arn  = data.terraform_remote_state.shared.outputs.acm_certificate_arn
-  domain_name      = "api.roboad.ai"
+  certificate_arn  = ""  # Empty - using Cloudflare SSL termination
+  domain_name      = "prod.api.roboad.ai"
 
   # Auto Scaling
   enable_autoscaling        = true

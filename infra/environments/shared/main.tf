@@ -86,70 +86,25 @@ module "shared" {
 }
 
 # ============================================================================
-# CLOUDFLARE CONFIGURATION - TEMPORARILY DISABLED FOR WORKSPACE CLEANUP
+# CLOUDFLARE CONFIGURATION
 # ============================================================================
 
-# TEMPORARY: Commented out to allow workspace destruction with corrupted state
-# Will be restored after workspace is deleted and recreated
-
-# # Hardcoded zone ID for roboad.ai
-# # Note: Cloudflare provider v5 has broken zone lookup by name
-# # See: https://github.com/cloudflare/terraform-provider-cloudflare/issues/4958
-# locals {
-#   cloudflare_zone_id = "37a732a3f8084c6331df47901dbc2cc5"
-# }
+# Hardcoded zone ID for roboad.ai
+# Note: Cloudflare provider v5 has broken zone lookup by name
+# See: https://github.com/cloudflare/terraform-provider-cloudflare/issues/4958
+locals {
+  cloudflare_zone_id = "37a732a3f8084c6331df47901dbc2cc5"
+}
 
 # ============================================================================
-# ACM WILDCARD CERTIFICATE - TEMPORARILY DISABLED FOR WORKSPACE CLEANUP
+# SSL/TLS CONFIGURATION
 # ============================================================================
-
-# TEMPORARY: Commented out to allow workspace destruction with corrupted state
-# Will be restored after workspace is deleted and recreated
-
-# resource "aws_acm_certificate" "wildcard" {
-#   domain_name       = "*.roboad.ai"
-#   validation_method = "DNS"
-#
-#   subject_alternative_names = [
-#     "roboad.ai"  # Include apex domain
-#   ]
-#
-#   lifecycle {
-#     create_before_destroy = true
-#   }
-#
-#   tags = {
-#     Name        = "${var.project_name}-wildcard-cert"
-#     Environment = "shared"
-#     ManagedBy   = "Terraform"
-#   }
-# }
-
-# # Cloudflare DNS validation records
-# resource "cloudflare_dns_record" "cert_validation" {
-#   for_each = {
-#     for dvo in aws_acm_certificate.wildcard.domain_validation_options : dvo.domain_name => {
-#       name   = dvo.resource_record_name
-#       record = dvo.resource_record_value
-#       type   = dvo.resource_record_type
-#     }
-#   }
-#
-#   zone_id = local.cloudflare_zone_id
-#   name    = each.value.name
-#   content = trimsuffix(each.value.record, ".")
-#   type    = each.value.type
-#   ttl     = 60
-#   proxied = false
-#
-#   comment = "ACM certificate validation for ${each.key}"
-# }
-
-# # Wait for certificate validation
-# resource "aws_acm_certificate_validation" "wildcard" {
-#   certificate_arn         = aws_acm_certificate.wildcard.arn
-#   validation_record_fqdns = [for record in cloudflare_dns_record.cert_validation : record.name]
-# }
+# Using Cloudflare Enterprise SSL instead of ACM
+# - Cloudflare provides SSL termination (user → Cloudflare)
+# - Backend ALB uses HTTP only (Cloudflare → ALB)
+# - Configured in Cloudflare Dashboard: SSL/TLS → Flexible mode
+# - No ACM certificate needed
+# ============================================================================
 
 # ============================================================================
 # SERVICE-LINKED ROLE FOR ECS AUTO SCALING
