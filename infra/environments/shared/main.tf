@@ -131,7 +131,7 @@ resource "cloudflare_dns_record" "cert_validation" {
 
   zone_id = local.cloudflare_zone_id
   name    = each.value.name
-  value   = trimsuffix(each.value.record, ".")
+  content = trimsuffix(each.value.record, ".")
   type    = each.value.type
   ttl     = 60
   proxied = false
