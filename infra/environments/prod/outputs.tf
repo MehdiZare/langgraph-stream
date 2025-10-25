@@ -4,8 +4,8 @@ output "alb_dns_name" {
 }
 
 output "alb_url" {
-  description = "URL of the Application Load Balancer"
-  value       = "http://${module.ecs_service.alb_dns_name}"
+  description = "Full service URL with HTTPS (via Cloudflare SSL)"
+  value       = module.ecs_service.service_url
 }
 
 output "ecs_cluster_name" {
