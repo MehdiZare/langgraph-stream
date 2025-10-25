@@ -133,6 +133,8 @@ resource "cloudflare_record" "cert_validation" {
   ttl     = 60
   proxied = false
 
+  allow_overwrite = true
+
   comment = "ACM certificate validation for ${each.key}"
 }
 

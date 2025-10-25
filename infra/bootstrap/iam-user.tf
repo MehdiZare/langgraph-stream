@@ -187,6 +187,21 @@ resource "aws_iam_policy" "terraform_deployer" {
             "iam:AWSServiceName" = "ecs.application-autoscaling.amazonaws.com"
           }
         }
+      },
+      {
+        Sid    = "ManageACM"
+        Effect = "Allow"
+        Action = [
+          "acm:RequestCertificate",
+          "acm:DescribeCertificate",
+          "acm:ListCertificates",
+          "acm:DeleteCertificate",
+          "acm:AddTagsToCertificate",
+          "acm:RemoveTagsFromCertificate",
+          "acm:GetCertificate",
+          "acm:ListTagsForCertificate"
+        ]
+        Resource = "*"
       }
     ]
   })
