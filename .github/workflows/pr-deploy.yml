@@ -241,7 +241,51 @@ jobs:
         run: |
           ALB_URL=$(terraform output -raw alb_url || echo "pending")
           echo "alb_url=$ALB_URL" >> $GITHUB_OUTPUT
-          echo "vercel_url=Managed separately in Vercel (backend/frontend are separate repos)" >> $GITHUB_OUTPUT
+          echo "vercel_url=Deploying..." >> $GITHUB_OUTPUT
+
+      - name: Deploy frontend to Vercel
+        id: deploy-vercel
+        if: vars.FRONTEND_REPO_URL != '' || vars.FRONTEND_REPO_PATH != ''
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_API_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_TEAM_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          BACKEND_URL: ${{ steps.get-urls.outputs.alb_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Install Vercel CLI
+          npm install -g vercel@latest
+
+          # Clone or navigate to frontend repository
+          if [ -n "${{ vars.FRONTEND_REPO_URL }}" ]; then
+            echo "Cloning frontend from ${{ vars.FRONTEND_REPO_URL }}"
+            git clone --depth 1 ${{ vars.FRONTEND_REPO_URL }} /tmp/frontend
+            cd /tmp/frontend
+          elif [ -n "${{ vars.FRONTEND_REPO_PATH }}" ]; then
+            echo "Using frontend from ${{ vars.FRONTEND_REPO_PATH }}"
+            cd ${{ vars.FRONTEND_REPO_PATH }}
+          else
+            echo "No frontend repo configured, skipping"
+            exit 0
+          fi
+
+          # Deploy to Vercel with backend URL as build-time environment variable
+          echo "Deploying to Vercel with NEXT_PUBLIC_BACKEND_URL=$BACKEND_URL"
+          DEPLOYMENT_URL=$(vercel deploy \
+            --token=$VERCEL_TOKEN \
+            ${VERCEL_ORG_ID:+--scope=$VERCEL_ORG_ID} \
+            --build-env NEXT_PUBLIC_BACKEND_URL=$BACKEND_URL \
+            --build-env NEXT_PUBLIC_PR_NUMBER=$PR_NUMBER \
+            --yes \
+            2>&1 | tee /tmp/vercel-deploy.log | grep -oP 'https://[^\s]+\.vercel\.app' | tail -1)
+
+          if [ -n "$DEPLOYMENT_URL" ]; then
+            echo "vercel_deployment_url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
+            echo "✅ Deployed to Vercel: $DEPLOYMENT_URL"
+          else
+            echo "vercel_deployment_url=Deployment in progress" >> $GITHUB_OUTPUT
+            echo "⚠️  Vercel deployment started"
+          fi
 
       - name: Comment PR with environment URL
         uses: actions/github-script@v8
@@ -249,14 +293,14 @@ jobs:
           script: |
             const prNumber = context.payload.pull_request.number;
             const albUrl = '${{ steps.get-urls.outputs.alb_url }}';
-            const vercelUrl = '${{ steps.get-urls.outputs.vercel_url }}';
+            const vercelUrl = '${{ steps.deploy-vercel.outputs.vercel_deployment_url }}' || 'Not configured';
 
             const comment = `## 🚀 PR Environment Deployed
 
-            Your PR backend environment has been successfully deployed!
+            Your PR environment has been successfully deployed!
 
             **Backend URL:** ${albUrl}
-            **Frontend:** ${vercelUrl}
+            **Frontend URL:** ${vercelUrl}
             - Backend Branch: \`${{ github.head_ref }}\`
 
             **Details:**
@@ -264,11 +308,9 @@ jobs:
             - Backend Image: \`pr-${prNumber}\`
             - Workspace: \`${{ env.TF_WORKSPACE_PREFIX }}-${prNumber}\`
 
-            **Note:** Backend and frontend are in separate repositories.
-            To connect your frontend to this backend:
-            1. Go to Vercel dashboard → Your project → Settings → Environment Variables
-            2. Add/update \`NEXT_PUBLIC_BACKEND_URL\` = \`${albUrl}\`
-            3. Target: Preview (or specific branch if needed)
+            **Environment Variables:**
+            - \`NEXT_PUBLIC_BACKEND_URL\`: ${albUrl}
+            - \`NEXT_PUBLIC_PR_NUMBER\`: ${prNumber}
 
             **Health Check:**
             \`\`\`bash
@@ -277,7 +319,7 @@ jobs:
 
             ---
 
-            Backend environment will be automatically destroyed when the PR is closed or merged.
+            Both backend and frontend environments will be automatically destroyed when the PR is closed or merged.
             `;
 
             // Check if we already commented
