@@ -29,7 +29,14 @@
       "Bash(curl:*)",
       "Bash(supabase db pull:*)",
       "Bash(supabase db push:*)",
-      "Bash(supabase migration:*)"
+      "Bash(supabase migration:*)",
+      "WebFetch(domain:renehernandez.io)",
+      "Bash(if [ -z \"$TF_API_TOKEN\" ])",
+      "Bash(then echo \"TF_API_TOKEN not set\")",
+      "Bash(exit 1)",
+      "Bash(else cd scripts)",
+      "Bash(./cleanup-pr-workspace.sh:*)",
+      "Bash(fi)"
     ],
     "deny": [],
     "ask": []
