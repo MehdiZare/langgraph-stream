@@ -247,31 +247,66 @@ jobs:
         id: deploy-vercel
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_API_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_TEAM_ID }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           BACKEND_URL: ${{ steps.get-urls.outputs.alb_url }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          # Install Vercel CLI
-          echo "Installing Vercel CLI..."
-          npm install -g vercel@latest
+          # Build JSON payload for Vercel deployment
+          echo "Creating Vercel deployment for roboad-front..."
 
-          # Deploy to Vercel with build-time environment variables
-          echo "Deploying to Vercel with NEXT_PUBLIC_BACKEND_URL=$BACKEND_URL"
-          DEPLOYMENT_URL=$(vercel deploy \
-            --token=$VERCEL_TOKEN \
-            --scope=$VERCEL_ORG_ID \
-            --build-env NEXT_PUBLIC_BACKEND_URL=$BACKEND_URL \
-            --build-env NEXT_PUBLIC_PR_NUMBER=$PR_NUMBER \
-            --yes \
-            2>&1 | tee /tmp/vercel-deploy.log | grep -oP 'https://[^\s]+\.vercel\.app' | tail -1)
+          cat > payload.json <<EOF
+          {
+            "name": "roboad-front",
+            "project": "$VERCEL_PROJECT_ID",
+            "target": "preview",
+            "gitSource": {
+              "type": "github",
+              "repoId": "$VERCEL_PROJECT_ID",
+              "ref": "main"
+            },
+            "build": {
+              "env": {
+                "NEXT_PUBLIC_BACKEND_URL": "$BACKEND_URL",
+                "NEXT_PUBLIC_PR_NUMBER": "$PR_NUMBER"
+              }
+            },
+            "meta": {
+              "githubCommitRef": "${{ github.head_ref }}",
+              "githubCommitSha": "${{ github.event.pull_request.head.sha }}",
+              "githubOrg": "${{ github.repository_owner }}",
+              "githubRepo": "${{ github.event.repository.name }}",
+              "backendPR": "$PR_NUMBER"
+            }
+          }
+          EOF
+
+          echo "Deployment payload:"
+          cat payload.json
+
+          # Trigger Vercel deployment via API
+          echo "Triggering Vercel deployment..."
+          RESPONSE=$(curl -f -s -X POST "https://api.vercel.com/v13/deployments?teamId=$VERCEL_TEAM_ID" \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-binary @payload.json)
+
+          # Extract deployment URL from response
+          DEPLOYMENT_URL=$(echo "$RESPONSE" | jq -r '.url // empty')
+          DEPLOYMENT_ID=$(echo "$RESPONSE" | jq -r '.id // empty')
 
           if [ -n "$DEPLOYMENT_URL" ]; then
+            # Add https:// prefix if not present
+            if [[ ! "$DEPLOYMENT_URL" =~ ^https:// ]]; then
+              DEPLOYMENT_URL="https://$DEPLOYMENT_URL"
+            fi
             echo "vercel_deployment_url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
             echo "✅ Deployed to Vercel: $DEPLOYMENT_URL"
+            echo "   Deployment ID: $DEPLOYMENT_ID"
           else
-            echo "vercel_deployment_url=Deployment in progress" >> $GITHUB_OUTPUT
-            echo "⚠️ Vercel deployment started, check logs above for details"
+            echo "vercel_deployment_url=Deployment initiated" >> $GITHUB_OUTPUT
+            echo "⚠️ Vercel deployment started, URL pending"
+            echo "Response: $RESPONSE"
           fi
 
       - name: Comment PR with environment URL
