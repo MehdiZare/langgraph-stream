@@ -72,7 +72,7 @@ data "terraform_remote_state" "shared" {
 # CLOUDFLARE DNS RECORD - api-pr-{number}.roboad.ai → PR ALB
 # ============================================================================
 
-resource "cloudflare_record" "api_pr" {
+resource "cloudflare_dns_record" "api_pr" {
   zone_id = data.terraform_remote_state.shared.outputs.cloudflare_zone_id
   name    = "api-pr-${var.pr_number}"
   content = module.ecs_service.alb_dns_name
