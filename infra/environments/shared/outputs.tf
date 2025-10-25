@@ -105,5 +105,5 @@ output "acm_certificate_arn" {
 
 output "cloudflare_zone_id" {
   description = "Cloudflare zone ID for roboad.ai"
-  value       = data.cloudflare_zone.main.id
+  value       = data.cloudflare_zones.main.zones[0].id
 }

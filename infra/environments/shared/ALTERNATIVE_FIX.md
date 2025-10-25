@@ -20,7 +20,7 @@ resource "cloudflare_record" "cert_validation" {
     }
   }
 
-  zone_id = data.cloudflare_zone.main.id
+  zone_id = data.cloudflare_zones.main.zones[0].id
   name    = each.value.name
   content = each.value.record
   type    = each.value.type

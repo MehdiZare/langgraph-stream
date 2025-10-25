@@ -89,8 +89,10 @@ module "shared" {
 # CLOUDFLARE DATA SOURCES
 # ============================================================================
 
-data "cloudflare_zone" "main" {
-  name = "roboad.ai"
+data "cloudflare_zones" "main" {
+  filter {
+    name = "roboad.ai"
+  }
 }
 
 # ============================================================================
@@ -126,7 +128,7 @@ resource "cloudflare_dns_record" "cert_validation" {
     }
   }
 
-  zone_id = data.cloudflare_zone.main.id
+  zone_id = data.cloudflare_zones.main.zones[0].id
   name    = each.value.name
   value   = trimsuffix(each.value.record, ".")
   type    = each.value.type
