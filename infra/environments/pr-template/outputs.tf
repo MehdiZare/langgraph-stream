@@ -23,17 +23,20 @@ output "pr_number" {
   value       = var.pr_number
 }
 
-output "vercel_env_vars_created" {
-  description = "Whether Vercel environment variables were created"
-  value       = length(vercel_project_environment_variable.backend_url) > 0
-}
+# Vercel outputs disabled - integration removed (backend/frontend in separate repos)
+# Manage Vercel environment variables separately in Vercel dashboard
 
-output "vercel_project_id" {
-  description = "Vercel project ID (if configured)"
-  value       = var.vercel_project_id
-}
+# output "vercel_env_vars_created" {
+#   description = "Whether Vercel environment variables were created"
+#   value       = length(vercel_project_environment_variable.backend_url) > 0
+# }
 
-output "vercel_preview_url" {
-  description = "Vercel preview deployment URL"
-  value       = try(vercel_deployment.pr_preview[0].url, "pending")
-}
+# output "vercel_project_id" {
+#   description = "Vercel project ID (if configured)"
+#   value       = var.vercel_project_id
+# }
+
+# output "vercel_preview_url" {
+#   description = "Vercel preview deployment URL"
+#   value       = try(vercel_deployment.pr_preview[0].url, "pending")
+# }
