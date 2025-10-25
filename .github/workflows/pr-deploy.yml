@@ -249,6 +249,7 @@ jobs:
           repository: RoboAdApp/roboad-front-end
           ref: main
           path: frontend
+          token: ${{ secrets.FRONTEND_REPO_TOKEN }}
 
       - name: Deploy frontend to Vercel
         id: deploy-vercel
