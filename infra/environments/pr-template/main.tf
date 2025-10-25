@@ -165,6 +165,7 @@ resource "vercel_project_environment_variable" "backend_url" {
   key        = "NEXT_PUBLIC_BACKEND_URL"
   value      = module.ecs_service.service_url
   target     = ["preview"]
+  git_branch = var.git_branch  # Scope to specific PR branch to avoid conflicts
 }
 
 resource "vercel_project_environment_variable" "pr_number_env" {
@@ -175,6 +176,7 @@ resource "vercel_project_environment_variable" "pr_number_env" {
   key        = "NEXT_PUBLIC_PR_NUMBER"
   value      = var.pr_number
   target     = ["preview"]
+  git_branch = var.git_branch  # Scope to specific PR branch to avoid conflicts
 }
 
 # ============================================================================
