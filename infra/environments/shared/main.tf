@@ -86,13 +86,14 @@ module "shared" {
 }
 
 # ============================================================================
-# CLOUDFLARE DATA SOURCES
+# CLOUDFLARE CONFIGURATION
 # ============================================================================
 
-data "cloudflare_zones" "main" {
-  filter {
-    name = "roboad.ai"
-  }
+# Hardcoded zone ID for roboad.ai
+# Note: Cloudflare provider v5 has broken zone lookup by name
+# See: https://github.com/cloudflare/terraform-provider-cloudflare/issues/4958
+locals {
+  cloudflare_zone_id = "37a732a3f8084c6331df47901dbc2cc5"
 }
 
 # ============================================================================
@@ -128,7 +129,7 @@ resource "cloudflare_dns_record" "cert_validation" {
     }
   }
 
-  zone_id = data.cloudflare_zones.main.zones[0].id
+  zone_id = local.cloudflare_zone_id
   name    = each.value.name
   value   = trimsuffix(each.value.record, ".")
   type    = each.value.type
