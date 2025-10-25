@@ -240,9 +240,8 @@ jobs:
           TF_WORKSPACE: ${{ env.TF_WORKSPACE_PREFIX }}-${{ github.event.pull_request.number }}
         run: |
           ALB_URL=$(terraform output -raw alb_url || echo "pending")
-          VERCEL_URL=$(terraform output -raw vercel_preview_url || echo "pending")
           echo "alb_url=$ALB_URL" >> $GITHUB_OUTPUT
-          echo "vercel_url=$VERCEL_URL" >> $GITHUB_OUTPUT
+          echo "vercel_url=Managed separately in Vercel (backend/frontend are separate repos)" >> $GITHUB_OUTPUT
 
       - name: Comment PR with environment URL
         uses: actions/github-script@v8
@@ -254,20 +253,22 @@ jobs:
 
             const comment = `## 🚀 PR Environment Deployed
 
-            Your PR environment has been successfully deployed!
+            Your PR backend environment has been successfully deployed!
 
             **Backend URL:** ${albUrl}
-            **Frontend Preview:** ${vercelUrl}
-            - Branch: \`${{ github.head_ref }}\`
+            **Frontend:** ${vercelUrl}
+            - Backend Branch: \`${{ github.head_ref }}\`
 
             **Details:**
             - PR Number: #${prNumber}
             - Backend Image: \`pr-${prNumber}\`
             - Workspace: \`${{ env.TF_WORKSPACE_PREFIX }}-${prNumber}\`
 
-            **Environment Variables Injected (scoped to branch \`${{ github.head_ref }}\`):**
-            - \`NEXT_PUBLIC_BACKEND_URL\`: ${albUrl}
-            - \`NEXT_PUBLIC_PR_NUMBER\`: ${prNumber}
+            **Note:** Backend and frontend are in separate repositories.
+            To connect your frontend to this backend:
+            1. Go to Vercel dashboard → Your project → Settings → Environment Variables
+            2. Add/update \`NEXT_PUBLIC_BACKEND_URL\` = \`${albUrl}\`
+            3. Target: Preview (or specific branch if needed)
 
             **Health Check:**
             \`\`\`bash
@@ -276,7 +277,7 @@ jobs:
 
             ---
 
-            Both backend and frontend environments will be automatically destroyed when the PR is closed or merged.
+            Backend environment will be automatically destroyed when the PR is closed or merged.
             `;
 
             // Check if we already commented
