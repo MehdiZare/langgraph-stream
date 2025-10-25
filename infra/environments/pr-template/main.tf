@@ -154,50 +154,56 @@ module "ecs_service" {
 }
 
 # ============================================================================
-# VERCEL INTEGRATION - Inject backend URL into frontend preview
+# VERCEL INTEGRATION - DISABLED
+# ============================================================================
+# Backend and frontend are in separate repositories with independent PR cycles.
+# - Backend repo: This repository (langgraph-stream)
+# - Frontend repo: Separate Vercel-connected repository
+#
+# Since Vercel is connected to the frontend repo, it cannot see backend branches
+# (e.g., 'add-supabase'). Therefore, Vercel environment variables should be
+# managed separately:
+#
+# Option 1 (Recommended): Set in Vercel Dashboard once
+#   - NEXT_PUBLIC_BACKEND_URL = https://prod.api.roboad.ai
+#   - All frontend previews connect to production backend
+#
+# Option 2: Manage per frontend PR manually in Vercel
+#   - Set NEXT_PUBLIC_BACKEND_URL for specific frontend PR branches
+#   - Point to corresponding backend PR environment if needed
+#
+# This keeps backend and frontend infrastructure cleanly separated.
 # ============================================================================
 
-resource "vercel_project_environment_variable" "backend_url" {
-  count = var.vercel_project_id != "" && var.git_branch != "" ? 1 : 0
+# Vercel integration commented out - manage Vercel env vars separately
 
-  project_id = var.vercel_project_id
-  team_id    = var.vercel_team_id
-  key        = "NEXT_PUBLIC_BACKEND_URL"
-  value      = module.ecs_service.service_url
-  target     = ["preview"]
-  git_branch = var.git_branch  # Scope to specific PR branch to avoid conflicts
-}
+# resource "vercel_project_environment_variable" "backend_url" {
+#   count = var.vercel_project_id != "" && var.git_branch != "" ? 1 : 0
+#   project_id = var.vercel_project_id
+#   team_id    = var.vercel_team_id
+#   key        = "NEXT_PUBLIC_BACKEND_URL"
+#   value      = module.ecs_service.service_url
+#   target     = ["preview"]
+# }
 
-resource "vercel_project_environment_variable" "pr_number_env" {
-  count = var.vercel_project_id != "" && var.git_branch != "" ? 1 : 0
+# resource "vercel_project_environment_variable" "pr_number_env" {
+#   count = var.vercel_project_id != "" && var.git_branch != "" ? 1 : 0
+#   project_id = var.vercel_project_id
+#   team_id    = var.vercel_team_id
+#   key        = "NEXT_PUBLIC_PR_NUMBER"
+#   value      = var.pr_number
+#   target     = ["preview"]
+# }
 
-  project_id = var.vercel_project_id
-  team_id    = var.vercel_team_id
-  key        = "NEXT_PUBLIC_PR_NUMBER"
-  value      = var.pr_number
-  target     = ["preview"]
-  git_branch = var.git_branch  # Scope to specific PR branch to avoid conflicts
-}
+# resource "vercel_deployment" "pr_preview" {
+#   count = var.vercel_project_id != "" && var.git_branch != "" ? 1 : 0
+#   project_id = var.vercel_project_id
+#   team_id    = var.vercel_team_id
+#   ref = var.git_branch
+#   production = false
 
-# ============================================================================
-# VERCEL DEPLOYMENT - Auto-deploy preview for PR
-# ============================================================================
-
-resource "vercel_deployment" "pr_preview" {
-  count = var.vercel_project_id != "" && var.git_branch != "" ? 1 : 0
-
-  project_id = var.vercel_project_id
-  team_id    = var.vercel_team_id
-
-  # Deploy from the PR branch
-  ref = var.git_branch
-
-  # Create preview deployment, NOT production
-  production = false
-
-  # Ensure env vars are set before deployment
-  depends_on = [
-    vercel_project_environment_variable.backend_url,
-    vercel_project_environment_variable.pr_number_env
-  ]
-}
+#   depends_on = [
+#     vercel_project_environment_variable.backend_url,
+#     vercel_project_environment_variable.pr_number_env
+#   ]
+# }
