@@ -4,10 +4,35 @@
 
 Your Terraform Cloud workspace has corrupted state. Here's the fastest way to fix it:
 
+### Option A: Complete Cleanup (Recommended - Everything)
+
 ```bash
 cd scripts
 
-# 1. Set your Terraform Cloud API token
+# 1. Set your AWS and Terraform Cloud credentials
+export AWS_REGION=us-east-2
+export TF_API_TOKEN='get_from_https://app.terraform.io/app/settings/tokens'
+
+# 2. See what exists (optional but recommended)
+./list-shared-resources.sh
+
+# 3. Delete ALL AWS resources (shared, PR, prod)
+./cleanup-all-aws-resources.sh
+# Type 'DELETE EVERYTHING' when prompted
+
+# 4. Force delete the corrupted workspace(s)
+./force-delete-shared-workspace.sh
+
+# 5. Push a commit or trigger deployment
+# Terraform Cloud will create fresh workspace automatically
+```
+
+### Option B: Selective Cleanup (Shared Only)
+
+```bash
+cd scripts
+
+# 1. Set your credentials
 export TF_API_TOKEN='get_from_https://app.terraform.io/app/settings/tokens'
 
 # 2. See what AWS resources exist
@@ -40,20 +65,21 @@ export TF_API_TOKEN='get_from_https://app.terraform.io/app/settings/tokens'
 
 ## Critical AWS Resources to Delete
 
-**Must delete to avoid costs:**
-- NAT Gateways (~$0.045/hour each)
-- Elastic IPs associated with NAT gateways
+### What the Complete Cleanup Script Deletes
+The `cleanup-all-aws-resources.sh` script deletes **everything**:
+- ✅ 2 NAT Gateways (~$0.09/hour) ⚠️ **Costs money!**
+- ✅ 2 VPCs and all networking (subnets, route tables, IGWs, security groups)
+- ✅ 3 ECS Clusters (shared, pr-3, prod) and all services
+- ✅ Load balancers and target groups
+- ✅ ACM certificate (FAILED status)
+- ✅ IAM roles (2 roles)
+- ✅ Secrets Manager secrets (10 secrets)
+- ✅ CloudWatch log groups
+- ✅ S3 bucket and ALL scan data
+- ✅ Elastic IPs
 
-**Should delete:**
-- VPC and all networking (subnets, route tables, IGW)
-- ACM certificate
-- IAM roles
-- Secrets Manager secrets
-- CloudWatch log groups
-- S3 buckets (scan data)
-
-**Keep:**
-- ECR repository (has your Docker images!)
+### What's Preserved
+- ✅ ECR repository (has your Docker images!)
 
 ## Order of Operations
 
@@ -81,10 +107,11 @@ Once workspace is recreated:
 
 ## Files to Read
 
-- `SHARED_WORKSPACE_CLEANUP.md` - Complete detailed guide
+- **`scripts/cleanup-all-aws-resources.sh`** - ⭐ Complete AWS cleanup (everything)
 - `scripts/list-shared-resources.sh` - See what exists
 - `scripts/force-delete-shared-workspace.sh` - Delete workspace
-- `scripts/cleanup-aws-resources.sh` - Alternative AWS cleanup (for PR envs)
+- `SHARED_WORKSPACE_CLEANUP.md` - Complete detailed guide
+- `scripts/cleanup-aws-resources.sh` - PR environment cleanup (legacy)
 
 ## Verification Commands
 
