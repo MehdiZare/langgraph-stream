@@ -257,6 +257,7 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_API_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_TEAM_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           BACKEND_URL: ${{ steps.get-urls.outputs.alb_url }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
