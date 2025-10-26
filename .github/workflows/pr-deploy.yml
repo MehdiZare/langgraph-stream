@@ -264,6 +264,8 @@ jobs:
           echo "Deploying frontend to Vercel..."
           echo "Backend URL: $BACKEND_URL"
           echo "PR Number: $PR_NUMBER"
+          echo "Project ID: $VERCEL_PROJECT_ID"
+          echo "Org ID: $VERCEL_ORG_ID"
           echo ""
 
           # Install Vercel CLI
@@ -271,24 +273,43 @@ jobs:
 
           # Deploy using Vercel CLI with build-time environment variables
           echo "Running vercel deploy..."
-          DEPLOYMENT_URL=$(vercel deploy \
+          set +e  # Don't exit on error, we want to capture it
+          vercel deploy \
             --token=$VERCEL_TOKEN \
             --scope=$VERCEL_ORG_ID \
             --build-env NEXT_PUBLIC_BACKEND_URL=$BACKEND_URL \
             --build-env NEXT_PUBLIC_PR_NUMBER=$PR_NUMBER \
             --yes \
-            2>&1 | tee /tmp/vercel-deploy.log | grep -oP 'https://[^\s]+\.vercel\.app' | tail -1)
+            2>&1 | tee /tmp/vercel-deploy.log
 
-          if [ -n "$DEPLOYMENT_URL" ]; then
-            echo "vercel_deployment_url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
-            echo ""
-            echo "✅ Successfully deployed to Vercel!"
-            echo "   URL: $DEPLOYMENT_URL"
+          EXIT_CODE=${PIPESTATUS[0]}
+          set -e  # Re-enable exit on error
+
+          echo ""
+          echo "Vercel CLI exit code: $EXIT_CODE"
+          echo ""
+
+          if [ $EXIT_CODE -eq 0 ]; then
+            # Extract URL from output
+            DEPLOYMENT_URL=$(grep -oP 'https://[^\s]+\.vercel\.app' /tmp/vercel-deploy.log | tail -1)
+
+            if [ -n "$DEPLOYMENT_URL" ]; then
+              echo "vercel_deployment_url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
+              echo "✅ Successfully deployed to Vercel!"
+              echo "   URL: $DEPLOYMENT_URL"
+            else
+              echo "vercel_deployment_url=Deployment completed (URL pending)" >> $GITHUB_OUTPUT
+              echo "⚠️ Deployment completed but URL not found in output"
+              echo "Full output:"
+              cat /tmp/vercel-deploy.log
+            fi
           else
-            echo "vercel_deployment_url=Deployment in progress" >> $GITHUB_OUTPUT
+            echo "vercel_deployment_url=Failed" >> $GITHUB_OUTPUT
+            echo "❌ Vercel deployment failed with exit code $EXIT_CODE"
             echo ""
-            echo "⚠️ Vercel deployment started, check logs above for details"
+            echo "Full deployment output:"
             cat /tmp/vercel-deploy.log
+            exit 1
           fi
 
       - name: Comment PR with environment URL
