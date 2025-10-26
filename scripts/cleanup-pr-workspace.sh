@@ -6,7 +6,7 @@
 # Usage: ./cleanup-pr-workspace.sh <PR_NUMBER>
 #
 
-set -e
+set -euo pipefail
 
 # Colors for output
 RED='\033[0;31m'

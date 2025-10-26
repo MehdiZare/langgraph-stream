@@ -254,16 +254,17 @@ async def websocket_endpoint(websocket: WebSocket):
                         tmp_file.write(screenshot_bytes)
                         tmp_path = tmp_file.name
 
-                    # Upload to S3
-                    s3_uploaded = upload_to_s3(tmp_path, session.current_scan_id, 'screenshot.png')
+                    try:
+                        # Upload to S3
+                        s3_uploaded = upload_to_s3(tmp_path, session.current_scan_id, 'screenshot.png')
 
-                    # Clean up temp file
-                    os.unlink(tmp_path)
-
-                    if s3_uploaded:
-                        print(f"Screenshot uploaded to S3 for scan {session.current_scan_id}")
-                    else:
-                        print(f"Failed to upload screenshot to S3 for scan {session.current_scan_id}")
+                        if s3_uploaded:
+                            print(f"Screenshot uploaded to S3 for scan {session.current_scan_id}")
+                        else:
+                            print(f"Failed to upload screenshot to S3 for scan {session.current_scan_id}")
+                    finally:
+                        # Always clean up temp file
+                        os.unlink(tmp_path)
 
                 except Exception as s3_error:
                     # Don't fail the whole analysis if S3 upload fails

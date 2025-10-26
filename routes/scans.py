@@ -6,10 +6,11 @@ Provides HTTP endpoints for scan CRUD operations.
 
 import uuid
 import asyncio
+import logging
 from typing import Optional
 from urllib.parse import urlparse
-from datetime import datetime, timedelta
-from fastapi import APIRouter, HTTPException, Header, BackgroundTasks
+from datetime import datetime, timedelta, timezone
+from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel, Field
 
 from utils import validate_url
@@ -26,6 +27,9 @@ from db import (
 )
 from services.scan_processor import get_scan_processor
 
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["scans"])
 
@@ -104,7 +108,7 @@ def generate_session_id() -> str:
     return str(uuid.uuid4())
 
 
-def format_scan_response(scan: dict, website: dict = None) -> dict:
+def format_scan_response(scan: dict, website: Optional[dict] = None) -> dict:
     """
     Format scan data for API response.
 
@@ -140,7 +144,6 @@ def format_scan_response(scan: dict, website: dict = None) -> dict:
 @router.post("/scans", response_model=CreateScanResponse)
 async def create_scan_endpoint(
     request: CreateScanRequest,
-    background_tasks: BackgroundTasks,
     authorization: Optional[str] = Header(None),
     x_session_id: Optional[str] = Header(None, alias="X-Session-ID")
 ):
@@ -184,13 +187,14 @@ async def create_scan_endpoint(
 
         # Start background processing
         processor = get_scan_processor()
-        background_tasks.add_task(
-            processor.process_scan,
-            url=request.url,
-            user_id=user_id,
-            session_id=session_id,
-            mode="structured",
-            scan_id=scan['id']
+        asyncio.create_task(
+            processor.process_scan(
+                url=request.url,
+                user_id=user_id,
+                session_id=session_id,
+                mode="structured",
+                scan_id=scan['id']
+            )
         )
 
         # Return scan details
@@ -205,8 +209,23 @@ async def create_scan_endpoint(
             created_at=scan['created_at']
         )
 
+    except ValueError as e:
+        # URL parsing or validation errors
+        logger.exception("Invalid data when creating scan")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid data provided for scan creation"
+        ) from e
+    except HTTPException:
+        # Re-raise HTTP exceptions (like 400 from validation)
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error creating scan: {str(e)}")
+        # Catch-all for unexpected errors (database, network, etc.)
+        logger.exception("Unexpected error creating scan")
+        raise HTTPException(
+            status_code=500,
+            detail="Error creating scan"
+        ) from e
 
 
 @router.get("/scans/{scan_id}", response_model=GetScanResponse)
@@ -321,8 +340,20 @@ async def claim_scans_endpoint(
             message=f"Successfully claimed {claimed_count} scan(s)"
         )
 
+    except ValueError as e:
+        # Invalid session_id or user_id
+        logger.exception("Invalid data when claiming scans")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid session or user data"
+        ) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error claiming scans: {str(e)}")
+        # Database errors or other unexpected issues
+        logger.exception("Unexpected error claiming scans")
+        raise HTTPException(
+            status_code=500,
+            detail="Error claiming scans"
+        ) from e
 
 
 @router.get("/scans/{scan_id}/assets", response_model=GetAssetsResponse)
@@ -362,7 +393,7 @@ async def get_scan_assets_endpoint(
     # Screenshot
     screenshot_url = get_s3_presigned_url(scan_id, 'screenshot.png', expiration)
     if screenshot_url:
-        expires_at = datetime.utcnow() + timedelta(seconds=expiration)
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=expiration)
         assets['screenshot'] = AssetInfo(
             url=screenshot_url,
             filename='screenshot.png',
@@ -372,7 +403,7 @@ async def get_scan_assets_endpoint(
     # HTML (optional)
     html_url = get_s3_presigned_url(scan_id, 'page.html', expiration)
     if html_url:
-        expires_at = datetime.utcnow() + timedelta(seconds=expiration)
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=expiration)
         assets['html'] = AssetInfo(
             url=html_url,
             filename='page.html',
@@ -382,7 +413,7 @@ async def get_scan_assets_endpoint(
     # Raw data (optional)
     raw_data_url = get_s3_presigned_url(scan_id, 'raw_data.json', expiration)
     if raw_data_url:
-        expires_at = datetime.utcnow() + timedelta(seconds=expiration)
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=expiration)
         assets['raw_data'] = AssetInfo(
             url=raw_data_url,
             filename='raw_data.json',

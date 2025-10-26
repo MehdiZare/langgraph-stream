@@ -56,8 +56,9 @@ async def fetch_screenshot_with_retry(steel_client, url: str, websocket: WebSock
                         "type": "status",
                         "content": f"Retrying screenshot capture (attempt {attempt + 1}/{STEEL_MAX_RETRIES})..."
                     })
-                # Wait with exponential backoff
-                await asyncio.sleep(STEEL_RETRY_DELAYS[attempt - 1])
+                # Wait with exponential backoff (safe indexing)
+                delay_index = min(attempt - 1, len(STEEL_RETRY_DELAYS) - 1)
+                await asyncio.sleep(STEEL_RETRY_DELAYS[delay_index])
 
             # Send progress update
             if websocket:
@@ -66,7 +67,12 @@ async def fetch_screenshot_with_retry(steel_client, url: str, websocket: WebSock
                     "content": "Contacting Steel.dev browser..."
                 })
 
-            response = steel_client.screenshot(url=url)
+            # Run blocking Steel SDK call in thread executor to avoid blocking event loop
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: steel_client.screenshot(url=url)
+            )
 
             # Extract URL or bytes from response
             if hasattr(response, 'url'):

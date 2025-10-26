@@ -6,7 +6,7 @@
 # Usage: ./cleanup-aws-resources.sh <PR_NUMBER>
 #
 
-set -e
+set -euo pipefail
 
 # Colors
 RED='\033[0;31m'

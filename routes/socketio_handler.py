@@ -215,7 +215,7 @@ async def handle_join(sid, data):
 
         if has_access:
             # Join the room
-            sio.enter_room(sid, f'scan_{scan_id}')
+            await sio.enter_room(sid, f'scan_{scan_id}')
             print(f'Client {sid} joined scan room: scan_{scan_id}')
 
             # Optionally send confirmation
@@ -254,7 +254,7 @@ async def handle_leave(sid, data):
             return
 
         # Leave the room
-        sio.leave_room(sid, f'scan_{scan_id}')
+        await sio.leave_room(sid, f'scan_{scan_id}')
         print(f'Client {sid} left scan room: scan_{scan_id}')
 
         # Optionally send confirmation
@@ -336,7 +336,7 @@ async def handle_analyze(sid, data):
         scan_id = scan['id']
 
         # Auto-join client to scan room for updates
-        sio.enter_room(sid, f'scan_{scan_id}')
+        await sio.enter_room(sid, f'scan_{scan_id}')
         print(f'Client {sid} auto-joined scan room: scan_{scan_id}')
 
         # Return scan info to client

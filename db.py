@@ -5,6 +5,7 @@ This module provides Supabase client and S3 client initialization
 along with helper functions for database operations and S3 file management.
 """
 
+import logging
 from typing import Optional
 from supabase import create_client, Client
 import boto3
@@ -23,6 +24,9 @@ from config import (
     AWS_REGION,
     S3_BUCKET_NAME
 )
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 
 def get_supabase_client(use_service_role: bool = False) -> Client:
@@ -109,7 +113,7 @@ def upload_to_s3(local_file_path: str, scan_id: str, filename: str) -> bool:
         )
         return True
     except ClientError as e:
-        print(f"Error uploading to S3: {e}")
+        logger.error(f"Error uploading to S3: {e}")
         return False
 
 
@@ -136,7 +140,7 @@ def download_from_s3(scan_id: str, filename: str, local_destination: str) -> boo
         )
         return True
     except ClientError as e:
-        print(f"Error downloading from S3: {e}")
+        logger.error(f"Error downloading from S3: {e}")
         return False
 
 
@@ -166,7 +170,7 @@ def get_s3_presigned_url(scan_id: str, filename: str, expiration: int = 3600) ->
         )
         return url
     except ClientError as e:
-        print(f"Error generating presigned URL: {e}")
+        logger.error(f"Error generating presigned URL: {e}")
         return None
 
 

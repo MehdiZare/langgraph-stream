@@ -157,8 +157,17 @@ Retrieve the status and results of a scan.
 
 **Example Usage**:
 ```javascript
-async function getScanStatus(scanId: string) {
-  const response = await fetch(`${API_BASE_URL}/api/scans/${scanId}`);
+async function getScanStatus(scanId: string, sessionId?: string) {
+  const headers: Record<string, string> = {};
+
+  // IMPORTANT: Include session ID for anonymous users
+  if (sessionId) {
+    headers['X-Session-ID'] = sessionId;
+  }
+
+  const response = await fetch(`${API_BASE_URL}/api/scans/${scanId}`, {
+    headers
+  });
 
   if (!response.ok) {
     throw new Error('Failed to fetch scan status');
@@ -167,6 +176,8 @@ async function getScanStatus(scanId: string) {
   return await response.json();
 }
 ```
+
+**⚠️ Important for Anonymous Users**: The `X-Session-ID` header is **REQUIRED** for anonymous users to access scans they created. Without it, you'll get a `404 Not Found` response even if the scan exists.
 
 ---
 
@@ -500,6 +511,31 @@ export function useScans() {
     }
   };
 
+  // Get a specific scan by ID
+  const getScan = async (scanId: string) => {
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json'
+    };
+
+    if (userId) {
+      const token = await getToken({ template: 'supabase' });
+      headers['Authorization'] = `Bearer ${token}`;
+    } else {
+      const sessionId = getOrCreateSessionId();
+      headers['X-Session-ID'] = sessionId;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/api/scans/${scanId}`, {
+      headers
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch scan');
+    }
+
+    return await response.json();
+  };
+
   useEffect(() => {
     if (userId) {
       claimScans();
@@ -511,6 +547,7 @@ export function useScans() {
     scans,
     loading,
     createScan,
+    getScan,
     fetchScans
   };
 }
