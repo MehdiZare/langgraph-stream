@@ -8,7 +8,7 @@ import uuid
 import asyncio
 from typing import Optional
 from urllib.parse import urlparse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException, Header, BackgroundTasks
 from pydantic import BaseModel, Field
 
@@ -362,7 +362,7 @@ async def get_scan_assets_endpoint(
     # Screenshot
     screenshot_url = get_s3_presigned_url(scan_id, 'screenshot.png', expiration)
     if screenshot_url:
-        expires_at = datetime.utcnow() + timedelta(seconds=expiration)
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=expiration)
         assets['screenshot'] = AssetInfo(
             url=screenshot_url,
             filename='screenshot.png',
@@ -372,7 +372,7 @@ async def get_scan_assets_endpoint(
     # HTML (optional)
     html_url = get_s3_presigned_url(scan_id, 'page.html', expiration)
     if html_url:
-        expires_at = datetime.utcnow() + timedelta(seconds=expiration)
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=expiration)
         assets['html'] = AssetInfo(
             url=html_url,
             filename='page.html',
@@ -382,7 +382,7 @@ async def get_scan_assets_endpoint(
     # Raw data (optional)
     raw_data_url = get_s3_presigned_url(scan_id, 'raw_data.json', expiration)
     if raw_data_url:
-        expires_at = datetime.utcnow() + timedelta(seconds=expiration)
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=expiration)
         assets['raw_data'] = AssetInfo(
             url=raw_data_url,
             filename='raw_data.json',
