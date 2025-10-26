@@ -1,0 +1,409 @@
+name: Deploy PR Environment
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - claude/langgraph-websocket-test-011CUKGPe1M5R36a5hzuEoBP
+      - main
+
+env:
+  AWS_REGION: us-east-2
+  ECR_REPOSITORY: roboad-backend
+  TF_CLOUD_ORGANIZATION: roboad
+  TF_WORKSPACE_PREFIX: roboad-fast-ws-pr
+
+jobs:
+  deploy:
+    name: Deploy PR Environment
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: pr-${{ github.event.pull_request.number }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          terraform_version: "1.9.0"
+
+      - name: Create Terraform Cloud workspace if not exists
+        env:
+          TF_CLOUD_TOKEN: ${{ secrets.TF_API_TOKEN }}
+          WORKSPACE_NAME: ${{ env.TF_WORKSPACE_PREFIX }}-${{ github.event.pull_request.number }}
+        run: |
+          # Check if workspace exists
+          WORKSPACE_ID=$(curl -s \
+            --header "Authorization: Bearer $TF_CLOUD_TOKEN" \
+            --header "Content-Type: application/vnd.api+json" \
+            "https://app.terraform.io/api/v2/organizations/$TF_CLOUD_ORGANIZATION/workspaces/$WORKSPACE_NAME" \
+            | jq -r '.data.id // empty')
+
+          if [ -z "$WORKSPACE_ID" ]; then
+            echo "Creating workspace $WORKSPACE_NAME..."
+            curl -s \
+              --header "Authorization: Bearer $TF_CLOUD_TOKEN" \
+              --header "Content-Type: application/vnd.api+json" \
+              --request POST \
+              --data @- \
+              "https://app.terraform.io/api/v2/organizations/$TF_CLOUD_ORGANIZATION/workspaces" <<EOF
+          {
+            "data": {
+              "type": "workspaces",
+              "attributes": {
+                "name": "$WORKSPACE_NAME",
+                "auto-apply": true,
+                "description": "PR #${{ github.event.pull_request.number }} - ${{ github.event.pull_request.title }}",
+                "terraform-version": "1.9.0",
+                "working-directory": "infra/environments/pr-template"
+              }
+            }
+          }
+          EOF
+          else
+            echo "Workspace $WORKSPACE_NAME already exists."
+          fi
+
+      - name: Set Terraform Cloud variables
+        env:
+          TF_CLOUD_TOKEN: ${{ secrets.TF_API_TOKEN }}
+          WORKSPACE_NAME: ${{ env.TF_WORKSPACE_PREFIX }}-${{ github.event.pull_request.number }}
+        run: |
+          # Get workspace ID
+          WORKSPACE_ID=$(curl -s \
+            --header "Authorization: Bearer $TF_CLOUD_TOKEN" \
+            --header "Content-Type: application/vnd.api+json" \
+            "https://app.terraform.io/api/v2/organizations/$TF_CLOUD_ORGANIZATION/workspaces/$WORKSPACE_NAME" \
+            | jq -r '.data.id')
+
+          # Helper function to create/update variable
+          set_variable() {
+            local key=$1
+            local value=$2
+            local sensitive=$3
+            local category=${4:-"terraform"}
+
+            # Check if variable exists
+            VAR_ID=$(curl -s \
+              --header "Authorization: Bearer $TF_CLOUD_TOKEN" \
+              "https://app.terraform.io/api/v2/workspaces/$WORKSPACE_ID/vars" \
+              | jq -r ".data[] | select(.attributes.key == \"$key\") | .id // empty")
+
+            if [ -z "$VAR_ID" ]; then
+              # Create variable
+              curl -s \
+                --header "Authorization: Bearer $TF_CLOUD_TOKEN" \
+                --header "Content-Type: application/vnd.api+json" \
+                --request POST \
+                --data @- \
+                "https://app.terraform.io/api/v2/workspaces/$WORKSPACE_ID/vars" <<EOF
+          {
+            "data": {
+              "type": "vars",
+              "attributes": {
+                "key": "$key",
+                "value": "$value",
+                "category": "$category",
+                "sensitive": $sensitive
+              }
+            }
+          }
+          EOF
+            else
+              # Update variable
+              curl -s \
+                --header "Authorization: Bearer $TF_CLOUD_TOKEN" \
+                --header "Content-Type: application/vnd.api+json" \
+                --request PATCH \
+                --data @- \
+                "https://app.terraform.io/api/v2/workspaces/$WORKSPACE_ID/vars/$VAR_ID" <<EOF
+          {
+            "data": {
+              "type": "vars",
+              "attributes": {
+                "key": "$key",
+                "value": "$value",
+                "sensitive": $sensitive
+              }
+            }
+          }
+          EOF
+            fi
+          }
+
+          # Set AWS credentials
+          set_variable "AWS_ACCESS_KEY_ID" "${{ secrets.AWS_ACCESS_KEY_ID }}" true "env"
+          set_variable "AWS_SECRET_ACCESS_KEY" "${{ secrets.AWS_SECRET_ACCESS_KEY }}" true "env"
+
+          # Set Vercel API token as environment variable
+          set_variable "VERCEL_API_TOKEN" "${{ secrets.VERCEL_API_TOKEN }}" true "env"
+
+          # Set Terraform variables
+          set_variable "pr_number" "${{ github.event.pull_request.number }}" false "terraform"
+          set_variable "git_branch" "${{ github.head_ref }}" false "terraform"
+          set_variable "vercel_project_id" "${{ secrets.VERCEL_PROJECT_ID }}" false "terraform"
+          set_variable "vercel_team_id" "${{ secrets.VERCEL_TEAM_ID }}" false "terraform"
+
+      - name: Grant PR workspace access to shared workspace state
+        env:
+          TF_CLOUD_TOKEN: ${{ secrets.TF_API_TOKEN }}
+          WORKSPACE_NAME: ${{ env.TF_WORKSPACE_PREFIX }}-${{ github.event.pull_request.number }}
+        run: |
+          # Get shared workspace ID
+          SHARED_WS_ID=$(curl -s \
+            --header "Authorization: Bearer $TF_CLOUD_TOKEN" \
+            --header "Content-Type: application/vnd.api+json" \
+            "https://app.terraform.io/api/v2/organizations/$TF_CLOUD_ORGANIZATION/workspaces/roboad-fast-ws-shared" \
+            | jq -r '.data.id')
+
+          # Get PR workspace ID
+          PR_WS_ID=$(curl -s \
+            --header "Authorization: Bearer $TF_CLOUD_TOKEN" \
+            --header "Content-Type: application/vnd.api+json" \
+            "https://app.terraform.io/api/v2/organizations/$TF_CLOUD_ORGANIZATION/workspaces/$WORKSPACE_NAME" \
+            | jq -r '.data.id')
+
+          echo "Shared workspace ID: $SHARED_WS_ID"
+          echo "PR workspace ID: $PR_WS_ID"
+
+          # Update shared workspace to allow PR workspace to read its state
+          # Get current remote state consumers
+          CURRENT_CONSUMERS=$(curl -s \
+            --header "Authorization: Bearer $TF_CLOUD_TOKEN" \
+            --header "Content-Type: application/vnd.api+json" \
+            "https://app.terraform.io/api/v2/workspaces/$SHARED_WS_ID/relationships/remote-state-consumers" \
+            | jq -r '[.data[].id] // []')
+
+          # Add PR workspace if not already in the list
+          if ! echo "$CURRENT_CONSUMERS" | grep -q "$PR_WS_ID"; then
+            # Get current list and add new workspace
+            NEW_CONSUMERS=$(echo "$CURRENT_CONSUMERS" | jq ". + [\"$PR_WS_ID\"]")
+
+            # Build the payload
+            PAYLOAD=$(jq -n \
+              --argjson data "$(echo $NEW_CONSUMERS | jq 'map({type: "workspaces", id: .})')" \
+              '{data: $data}')
+
+            # Update the workspace
+            curl -s \
+              --header "Authorization: Bearer $TF_CLOUD_TOKEN" \
+              --header "Content-Type: application/vnd.api+json" \
+              --request PATCH \
+              --data "$PAYLOAD" \
+              "https://app.terraform.io/api/v2/workspaces/$SHARED_WS_ID/relationships/remote-state-consumers"
+
+            echo "✅ Granted PR workspace access to shared workspace state"
+          else
+            echo "✅ PR workspace already has access to shared workspace state"
+          fi
+
+      - name: Terraform Init and Apply
+        working-directory: infra/environments/pr-template
+        env:
+          TF_WORKSPACE: ${{ env.TF_WORKSPACE_PREFIX }}-${{ github.event.pull_request.number }}
+        run: |
+          terraform init
+          terraform apply -auto-approve \
+            -var="pr_number=${{ github.event.pull_request.number }}" \
+            -var="git_branch=${{ github.head_ref }}"
+
+      - name: Wait for ECS deployment to complete
+        working-directory: infra/environments/pr-template
+        env:
+          TF_WORKSPACE: ${{ env.TF_WORKSPACE_PREFIX }}-${{ github.event.pull_request.number }}
+        run: |
+          # Get the ECS cluster and service names from Terraform outputs
+          CLUSTER_NAME=$(terraform output -raw ecs_cluster_name)
+          SERVICE_NAME=$(terraform output -raw ecs_service_name)
+
+          echo "Waiting for ECS service to stabilize..."
+          echo "Cluster: $CLUSTER_NAME"
+          echo "Service: $SERVICE_NAME"
+          echo ""
+
+          # Wait for service to become stable (max 10 minutes)
+          aws ecs wait services-stable \
+            --cluster "$CLUSTER_NAME" \
+            --services "$SERVICE_NAME" \
+            --region ${{ env.AWS_REGION }}
+
+          echo ""
+          echo "✅ ECS deployment completed successfully"
+          echo "New container is now running and healthy"
+
+      - name: Get deployment URLs
+        id: get-urls
+        working-directory: infra/environments/pr-template
+        env:
+          TF_WORKSPACE: ${{ env.TF_WORKSPACE_PREFIX }}-${{ github.event.pull_request.number }}
+        run: |
+          ALB_URL=$(terraform output -raw alb_url || echo "pending")
+          echo "alb_url=$ALB_URL" >> $GITHUB_OUTPUT
+          echo "vercel_url=Deploying..." >> $GITHUB_OUTPUT
+
+      - name: Checkout frontend repository
+        uses: actions/checkout@v5
+        with:
+          repository: RoboAdApp/roboad-front-end
+          ref: main
+          path: frontend
+          token: ${{ secrets.FRONTEND_REPO_TOKEN }}
+
+      - name: Deploy frontend to Vercel
+        id: deploy-vercel
+        working-directory: frontend
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_API_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_TEAM_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          BACKEND_URL: ${{ steps.get-urls.outputs.alb_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          echo "Deploying frontend to Vercel..."
+          echo "Backend URL: $BACKEND_URL"
+          echo "PR Number: $PR_NUMBER"
+          echo "Project ID: $VERCEL_PROJECT_ID"
+          echo "Org ID: $VERCEL_ORG_ID"
+          echo ""
+
+          # Install Vercel CLI
+          npm install -g vercel@latest
+
+          # Deploy using Vercel CLI with build-time environment variables
+          echo "Running vercel deploy..."
+          set +e  # Don't exit on error, we want to capture it
+          vercel deploy \
+            --token=$VERCEL_TOKEN \
+            --scope=$VERCEL_ORG_ID \
+            --build-env NEXT_PUBLIC_BACKEND_URL=$BACKEND_URL \
+            --build-env NEXT_PUBLIC_PR_NUMBER=$PR_NUMBER \
+            --yes \
+            2>&1 | tee /tmp/vercel-deploy.log
+
+          EXIT_CODE=${PIPESTATUS[0]}
+          set -e  # Re-enable exit on error
+
+          echo ""
+          echo "Vercel CLI exit code: $EXIT_CODE"
+          echo ""
+
+          if [ $EXIT_CODE -eq 0 ]; then
+            # Extract URL from output
+            DEPLOYMENT_URL=$(grep -oP 'https://[^\s]+\.vercel\.app' /tmp/vercel-deploy.log | tail -1)
+
+            if [ -n "$DEPLOYMENT_URL" ]; then
+              echo "vercel_deployment_url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
+              echo "✅ Successfully deployed to Vercel!"
+              echo "   URL: $DEPLOYMENT_URL"
+            else
+              echo "vercel_deployment_url=Deployment completed (URL pending)" >> $GITHUB_OUTPUT
+              echo "⚠️ Deployment completed but URL not found in output"
+              echo "Full output:"
+              cat /tmp/vercel-deploy.log
+            fi
+          else
+            echo "vercel_deployment_url=Failed" >> $GITHUB_OUTPUT
+            echo "❌ Vercel deployment failed with exit code $EXIT_CODE"
+            echo ""
+            echo "Full deployment output:"
+            cat /tmp/vercel-deploy.log
+            exit 1
+          fi
+
+      - name: Comment PR with environment URL
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const albUrl = '${{ steps.get-urls.outputs.alb_url }}';
+            const vercelUrl = '${{ steps.deploy-vercel.outputs.vercel_deployment_url }}' || 'Not configured';
+
+            const comment = `## 🚀 PR Environment Deployed
+
+            Your PR environment has been successfully deployed!
+
+            **Backend URL:** ${albUrl}
+            **Frontend URL:** ${vercelUrl}
+            - Backend Branch: \`${{ github.head_ref }}\`
+
+            **Details:**
+            - PR Number: #${prNumber}
+            - Backend Image: \`pr-${prNumber}\`
+            - Workspace: \`${{ env.TF_WORKSPACE_PREFIX }}-${prNumber}\`
+
+            **Environment Variables:**
+            - \`NEXT_PUBLIC_BACKEND_URL\`: ${albUrl}
+            - \`NEXT_PUBLIC_PR_NUMBER\`: ${prNumber}
+
+            **Health Check:**
+            \`\`\`bash
+            curl ${albUrl}/health
+            \`\`\`
+
+            ---
+
+            Both backend and frontend environments will be automatically destroyed when the PR is closed or merged.
+            `;
+
+            // Check if we already commented
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+
+            const botComment = comments.find(comment =>
+              comment.user.type === 'Bot' && comment.body.includes('## PR Environment Deployed')
+            );
+
+            if (botComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: comment
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: comment
+              });
+            }
+
+      - name: Deployment summary
+        run: |
+          echo "## PR Environment Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "**Backend URL:** ${{ steps.get-urls.outputs.alb_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Frontend URL:** ${{ steps.get-urls.outputs.vercel_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** ${{ steps.build-image.outputs.image }}" >> $GITHUB_STEP_SUMMARY
+          echo "**PR:** #${{ github.event.pull_request.number }}" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  # Redis - Internal only (no external ports)
+  redis:
+    image: redis:7-alpine
+    container_name: langgraph-redis
+    command: redis-server --appendonly yes --appendfsync everysec
+    volumes:
+      # Persist Redis data
+      - redis-data:/data
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    # NO ports mapping - Redis is internal only!
+    # Only accessible within Docker network at redis://redis:6379
+
+  # FastAPI + Socket.io Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: langgraph-app
+    ports:
+      - "8010:8010"  # Only app is exposed to host
+    environment:
+      - PORT=8010
+      - REDIS_URL=redis://redis:6379  # Internal Redis connection
+      - LLAMA_API_KEY=${LLAMA_API_KEY}
+      - STEEL_API_KEY=${STEEL_API_KEY}
+      - SERPAPI_KEY=${SERPAPI_KEY}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_REGION=${AWS_REGION:-us-east-2}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+    volumes:
+      # Mount .env file for local development
+      - ./.env:/.env:ro
+      # Mount cache directory for persistence
+      - ./cache_data:/app/.cache/screenshots
+    depends_on:
+      redis:
+        condition: service_healthy  # Wait for Redis to be ready
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8010/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+    # Internal network - not accessible from host except via exposed ports
+
+volumes:
+  redis-data:
+    driver: local

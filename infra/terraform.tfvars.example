@@ -1,0 +1,44 @@
+# Example Terraform Variables Configuration
+# Copy this file to terraform.tfvars and update with your values
+
+# AWS Configuration
+aws_region = "us-east-1"
+
+# Project Configuration
+project_name = "langgraph"
+environment  = "production"
+
+# VPC Configuration
+vpc_cidr           = "10.0.0.0/16"
+availability_zones = ["us-east-1a", "us-east-1b"]
+
+# ECS Configuration
+ecs_task_cpu    = 512  # 0.5 vCPU
+ecs_task_memory = 1024 # 1 GB
+
+# Service Scaling
+ecs_desired_count = 1  # Number of tasks to run
+ecs_min_capacity  = 1  # Minimum tasks for auto-scaling
+ecs_max_capacity  = 4  # Maximum tasks for auto-scaling
+ecs_cpu_target    = 70 # Target CPU % for auto-scaling
+
+# Application Configuration
+container_port = 8010
+app_image_tag  = "latest"
+
+# ALB Configuration
+alb_idle_timeout = 300 # 5 minutes (important for WebSocket)
+
+# Secrets Configuration
+# DO NOT set API keys here! Instead, set them in Terraform Cloud as sensitive Terraform variables:
+# 1. Go to Terraform Cloud workspace → Variables
+# 2. Add these as Terraform variables (NOT environment variables), marked as sensitive:
+#    - llama_api_key = "your-actual-llama-api-key"
+#    - steel_api_key = "your-actual-steel-api-key"
+#    - serpapi_key = "your-actual-serpapi-key"
+
+# Vercel Integration
+# Get project ID from: Vercel → Project Settings → General
+# Get team ID from: Vercel → Team Settings (if using team projects)
+vercel_project_id = "prj_xxxxxxxxxxxxxxxxxxxxx"  # Replace with your project ID
+vercel_team_id    = null                         # Or "team_xxxxx" if using teams

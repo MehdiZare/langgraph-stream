@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LangGraph WebSocket Test</title>
+    <title>Website Scanner - Socket.io</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -68,6 +70,12 @@
             border: 1px solid #ffeaa7;
         }
 
+        .status.processing {
+            background: #cfe2ff;
+            color: #084298;
+            border: 1px solid #b6d4fe;
+        }
+
         .chat-container {
             background: #f8f9fa;
             border-radius: 15px;
@@ -124,6 +132,171 @@
             background: #f8d7da;
             color: #721c24;
             max-width: 100%;
+        }
+
+        .message.structured {
+            background: white;
+            border: 2px solid #667eea;
+            border-radius: 12px;
+            padding: 20px;
+            max-width: 90%;
+        }
+
+        .structured-analysis {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .structured-analysis h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+
+        .analysis-field {
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .analysis-field strong {
+            color: #667eea;
+            display: block;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .analysis-field ul {
+            margin: 10px 0 0 20px;
+            padding: 0;
+            list-style-type: disc;
+        }
+
+        .analysis-field li {
+            margin: 5px 0;
+            color: #333;
+        }
+
+        .message.seo-recommendation {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border: 2px solid #667eea;
+            border-radius: 12px;
+            padding: 20px;
+            max-width: 95%;
+        }
+
+        .seo-analysis h3 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .ranking-badge {
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            display: inline-block;
+            margin: 0 3px;
+        }
+
+        .ranking-badge.google {
+            background: #4285f4;
+        }
+
+        .ranking-badge.bing {
+            background: #008373;
+        }
+
+        .ranking-badge.not-ranked {
+            background: #ffc107;
+            color: #333;
+        }
+
+        .seo-section {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .seo-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .seo-section strong {
+            color: #667eea;
+            display: block;
+            margin-bottom: 10px;
+            font-size: 15px;
+        }
+
+        .seo-content {
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .seo-content p {
+            margin: 10px 0;
+        }
+
+        .seo-content ul,
+        .seo-content ol {
+            margin: 10px 0;
+            padding-left: 25px;
+        }
+
+        .seo-content li {
+            margin: 5px 0;
+        }
+
+        /* Progress Bar Styles */
+        .progress-container {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border: 1px solid #e0e0e0;
+            display: none;
+        }
+
+        .progress-container.visible {
+            display: block;
+        }
+
+        .progress-bar-wrapper {
+            width: 100%;
+            height: 30px;
+            background: #e0e0e0;
+            border-radius: 15px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 14px;
+            width: 0%;
+        }
+
+        .progress-text {
+            text-align: center;
+            color: #666;
+            font-size: 14px;
+            font-weight: 500;
         }
 
         .input-container {
@@ -189,63 +362,6 @@
             transform: translateY(-1px);
         }
 
-        .streaming-indicator {
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            background: #667eea;
-            border-radius: 50%;
-            margin-left: 5px;
-            animation: pulse 1.5s ease-in-out infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% {
-                opacity: 1;
-            }
-            50% {
-                opacity: 0.3;
-            }
-        }
-
-        .message.structured {
-            background: white;
-            border: 2px solid #667eea;
-            border-radius: 12px;
-            padding: 20px;
-            max-width: 90%;
-        }
-
-        .structured-analysis {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
-
-        .analysis-field {
-            padding: 12px;
-            background: #f8f9fa;
-            border-radius: 8px;
-        }
-
-        .analysis-field strong {
-            color: #667eea;
-            display: block;
-            margin-bottom: 8px;
-            font-size: 14px;
-        }
-
-        .analysis-field ul {
-            margin: 10px 0 0 20px;
-            padding: 0;
-            list-style-type: disc;
-        }
-
-        .analysis-field li {
-            margin: 5px 0;
-            color: #333;
-        }
-
         .mode-toggle {
             margin-bottom: 15px;
             padding: 10px;
@@ -276,8 +392,8 @@
 </head>
 <body>
     <div class="container">
-        <h1>Website Screenshot Analyzer</h1>
-        <p class="subtitle">AI-powered website analysis using Llama Vision + Steel.dev</p>
+        <h1>Website Scanner (Socket.io)</h1>
+        <p class="subtitle">AI-powered website analysis with real-time updates</p>
 
         <div id="status" class="status connecting">
             Connecting to server...
@@ -285,12 +401,12 @@
 
         <div class="mode-toggle">
             <label>
-                <input type="radio" name="mode" value="structured" checked>
-                Structured Analysis
+                <input type="radio" name="scanMethod" value="api" checked>
+                REST API + Socket.io (Recommended)
             </label>
             <label>
-                <input type="radio" name="mode" value="streaming">
-                Streaming Description
+                <input type="radio" name="scanMethod" value="socket">
+                Socket.io Only
             </label>
         </div>
 
@@ -299,6 +415,16 @@
             <button class="quick-btn" onclick="sendQuickURL('https://news.ycombinator.com')">Hacker News</button>
             <button class="quick-btn" onclick="sendQuickURL('https://www.anthropic.com')">Anthropic</button>
             <button class="quick-btn" onclick="clearChat()">Clear Chat</button>
+        </div>
+
+        <div id="progressContainer" class="progress-container">
+            <div class="progress-bar-wrapper">
+                <div id="progressBar" class="progress-bar" role="progressbar"
+                     aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                    0%
+                </div>
+            </div>
+            <div id="progressText" class="progress-text">Initializing...</div>
         </div>
 
         <div id="chatContainer" class="chat-container"></div>
@@ -310,100 +436,252 @@
                 placeholder="Enter a website URL (e.g., https://example.com)..."
                 onkeypress="handleKeyPress(event)"
             />
-            <button id="sendBtn" onclick="sendMessage()">Analyze</button>
+            <button id="sendBtn" onclick="sendMessage()" disabled>Analyze</button>
         </div>
     </div>
 
     <script>
-        let ws;
-        let currentAssistantMessage = null;
-        let isStreaming = false;
+        // State management
+        const state = {
+            socket: null,
+            sessionId: null,
+            currentScanId: null,
+            isAuthenticated: false,
+            isConnected: false
+        };
 
-        function connect() {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}/ws`;
+        // Initialize Socket.io connection
+        function initializeSocket() {
+            console.log('Initializing Socket.io connection...');
 
-            ws = new WebSocket(wsUrl);
+            state.socket = io({
+                reconnection: true,
+                reconnectionDelay: 3000,
+                reconnectionAttempts: Infinity
+            });
 
-            ws.onopen = () => {
-                console.log('WebSocket connected');
-                updateStatus('connected', 'Connected to server');
-                document.getElementById('sendBtn').disabled = false;
-            };
+            // Connection events
+            state.socket.on('connect', handleConnect);
+            state.socket.on('disconnect', handleDisconnect);
+            state.socket.on('connect_error', handleConnectError);
 
-            ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                handleServerMessage(data);
-            };
+            // Auth events
+            state.socket.on('auth_response', handleAuthResponse);
 
-            ws.onclose = () => {
-                console.log('WebSocket disconnected');
-                updateStatus('disconnected', 'Disconnected from server');
-                document.getElementById('sendBtn').disabled = true;
+            // Scan events
+            state.socket.on('analyze_response', handleAnalyzeResponse);
+            state.socket.on('scan:progress', handleScanProgress);
+            state.socket.on('scan:completed', handleScanCompleted);
+            state.socket.on('scan:failed', handleScanFailed);
+            state.socket.on('scan:issue', handleScanIssue);
 
-                // Attempt to reconnect after 3 seconds
-                setTimeout(connect, 3000);
-            };
+            // Room events
+            state.socket.on('joined', handleRoomJoined);
+            state.socket.on('left', handleRoomLeft);
 
-            ws.onerror = (error) => {
-                console.error('WebSocket error:', error);
-                addMessage('error', 'WebSocket error occurred');
-            };
+            // Error events
+            state.socket.on('error', handleError);
         }
 
+        // Connection handlers
+        function handleConnect() {
+            console.log('Socket.io connected');
+            state.isConnected = true;
+            updateStatus('connected', '✓ Connected to server');
+
+            // Get session_id from localStorage
+            const sessionId = localStorage.getItem('session_id');
+
+            // Send auth (anonymous - no login required)
+            state.socket.emit('auth', {
+                token: null,
+                session_id: sessionId
+            });
+        }
+
+        function handleDisconnect() {
+            console.log('Socket.io disconnected');
+            state.isConnected = false;
+            updateStatus('disconnected', '✗ Disconnected from server');
+            document.getElementById('sendBtn').disabled = true;
+        }
+
+        function handleConnectError(error) {
+            console.error('Socket.io connection error:', error);
+            updateStatus('disconnected', '✗ Connection error');
+            addMessage('error', `Connection error: ${error.message || 'Unknown error'}`);
+        }
+
+        // Auth handlers
+        function handleAuthResponse(data) {
+            console.log('Auth response:', data);
+
+            if (!data.authenticated && data.session_id) {
+                state.sessionId = data.session_id;
+                localStorage.setItem('session_id', data.session_id);
+                console.log('Anonymous session created:', data.session_id);
+            }
+
+            // Enable UI
+            document.getElementById('sendBtn').disabled = false;
+        }
+
+        // Scan event handlers
+        function handleAnalyzeResponse(data) {
+            console.log('Analyze response:', data);
+            state.currentScanId = data.scan_id;
+            addMessage('system', `✓ Scan created: ${data.scan_id}`);
+            showProgressBar();
+        }
+
+        function handleScanProgress(data) {
+            console.log('Scan progress:', data);
+            updateProgressBar(data.percent, data.message);
+        }
+
+        function handleScanCompleted(data) {
+            console.log('Scan completed:', data);
+            hideProgressBar();
+
+            // Display results
+            if (data.results) {
+                if (data.results.analysis) {
+                    displayStructuredAnalysis(data.results.analysis);
+                }
+
+                if (data.results.seo) {
+                    displaySEORecommendation(data.results.seo);
+                }
+            }
+
+            addMessage('system', '✅ Scan completed successfully!');
+            updateStatus('connected', '✓ Connected to server');
+        }
+
+        function handleScanFailed(data) {
+            console.error('Scan failed:', data);
+            hideProgressBar();
+            addMessage('error', `✗ Scan failed: ${data.error}`);
+            updateStatus('connected', '✓ Connected to server');
+        }
+
+        function handleScanIssue(data) {
+            console.log('Scan issue:', data);
+            addMessage('system', `⚠ Issue: ${JSON.stringify(data.issue)}`);
+        }
+
+        // Room handlers
+        function handleRoomJoined(data) {
+            console.log('Joined room:', data);
+        }
+
+        function handleRoomLeft(data) {
+            console.log('Left room:', data);
+        }
+
+        // Error handler
+        function handleError(data) {
+            console.error('Socket.io error:', data);
+            addMessage('error', data.message || 'An error occurred');
+        }
+
+        // REST API scan creation
+        async function createScanViaAPI(url) {
+            try {
+                updateStatus('processing', '⏳ Creating scan...');
+
+                const response = await fetch('/api/scans', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ url: url })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                console.log('Scan created via API:', data);
+
+                // Save current scan ID
+                state.currentScanId = data.scan_id;
+
+                addMessage('system', `✓ Scan created: ${data.scan_id}`);
+
+                // Join scan room via Socket.io
+                state.socket.emit('join', {
+                    scan_id: data.scan_id
+                });
+
+                // Show progress bar
+                showProgressBar();
+                updateStatus('processing', '⏳ Scanning...');
+
+                return data;
+            } catch (error) {
+                console.error('Error creating scan:', error);
+                addMessage('error', `Failed to create scan: ${error.message}`);
+                updateStatus('connected', '✓ Connected to server');
+                throw error;
+            }
+        }
+
+        // Socket.io scan creation
+        function createScanViaSocket(url, mode = 'structured') {
+            if (!state.socket || !state.socket.connected) {
+                addMessage('error', 'Not connected to server');
+                return;
+            }
+
+            updateStatus('processing', '⏳ Starting scan...');
+
+            state.socket.emit('analyze', {
+                url: url,
+                mode: mode
+            });
+
+            showProgressBar();
+        }
+
+        // UI Functions
         function updateStatus(state, message) {
             const statusEl = document.getElementById('status');
             statusEl.className = `status ${state}`;
             statusEl.textContent = message;
         }
 
-        function handleServerMessage(data) {
-            switch (data.type) {
-                case 'status':
-                    // Show status updates (capturing screenshot, etc.)
-                    addMessage('system', data.content);
-                    break;
+        function showProgressBar() {
+            const progressContainer = document.getElementById('progressContainer');
+            progressContainer.classList.add('visible');
+            updateProgressBar(0, 'Starting scan...');
+        }
 
-                case 'start':
-                    isStreaming = true;
-                    currentAssistantMessage = addMessage('assistant', '');
-                    currentAssistantMessage.innerHTML = '<span class="streaming-indicator"></span>';
-                    break;
+        function updateProgressBar(percent, message) {
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
 
-                case 'token':
-                    if (currentAssistantMessage) {
-                        // Remove streaming indicator if it exists
-                        const indicator = currentAssistantMessage.querySelector('.streaming-indicator');
-                        if (indicator) {
-                            indicator.remove();
-                        }
-                        // Append the new token
-                        currentAssistantMessage.textContent += data.content;
-                    }
-                    break;
+            progressBar.style.width = `${percent}%`;
+            progressBar.setAttribute('aria-valuenow', percent);
+            progressBar.textContent = `${percent}%`;
+            progressText.textContent = `${percent}% - ${message}`;
+        }
 
-                case 'end':
-                    isStreaming = false;
-                    currentAssistantMessage = null;
-                    console.log('Analysis complete');
-                    break;
+        function hideProgressBar() {
+            const progressContainer = document.getElementById('progressContainer');
+            progressContainer.classList.remove('visible');
+        }
 
-                case 'structured':
-                    // Handle structured JSON response
-                    isStreaming = false;
-                    displayStructuredAnalysis(data.analysis);
-                    currentAssistantMessage = null;
-                    break;
-
-                case 'error':
-                    isStreaming = false;
-                    addMessage('error', data.content);
-                    currentAssistantMessage = null;
-                    break;
-
-                default:
-                    console.log('Unknown message type:', data.type);
-            }
+        function addMessage(type, content) {
+            const chatContainer = document.getElementById('chatContainer');
+            const messageEl = document.createElement('div');
+            messageEl.className = `message ${type}`;
+            messageEl.textContent = content;
+            chatContainer.appendChild(messageEl);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            return messageEl;
         }
 
         function displayStructuredAnalysis(analysis) {
@@ -414,20 +692,24 @@
 
             analysisEl.innerHTML = `
                 <div class="structured-analysis">
+                    <h3>📊 Website Analysis</h3>
                     <div class="analysis-field">
-                        <strong>Website Type:</strong> ${analysis.website_type}
+                        <strong>Type:</strong> ${analysis.website_type || 'N/A'}
                     </div>
                     <div class="analysis-field">
-                        <strong>Primary Goal:</strong> ${analysis.primary_goal}
+                        <strong>Primary Goal:</strong> ${analysis.primary_goal || 'N/A'}
                     </div>
                     <div class="analysis-field">
-                        <strong>Description:</strong> ${analysis.description}
+                        <strong>Description:</strong> ${analysis.description || 'N/A'}
                     </div>
                     <div class="analysis-field">
                         <strong>Key Features:</strong>
                         <ul>
-                            ${analysis.key_features.map(f => `<li>${f}</li>`).join('')}
+                            ${(analysis.key_features || []).map(f => `<li>${f}</li>`).join('')}
                         </ul>
+                    </div>
+                    <div class="analysis-field">
+                        <strong>Keywords:</strong> ${(analysis.keywords || []).join(', ') || 'N/A'}
                     </div>
                 </div>
             `;
@@ -436,57 +718,100 @@
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
-        function addMessage(type, content) {
+        function displaySEORecommendation(seo) {
             const chatContainer = document.getElementById('chatContainer');
-            const messageEl = document.createElement('div');
-            messageEl.className = `message ${type}`;
-            messageEl.textContent = content;
-            chatContainer.appendChild(messageEl);
 
-            // Scroll to bottom
+            const seoEl = document.createElement('div');
+            seoEl.className = 'message seo-recommendation';
+
+            // Ranking badges
+            const googleBadge = seo.google_ranking
+                ? `<span class="ranking-badge google">Google #${seo.google_ranking}</span>`
+                : `<span class="ranking-badge not-ranked">Not in Top 10</span>`;
+
+            const bingBadge = seo.bing_ranking
+                ? `<span class="ranking-badge bing">Bing #${seo.bing_ranking}</span>`
+                : `<span class="ranking-badge not-ranked">Not in Top 10</span>`;
+
+            seoEl.innerHTML = `
+                <div class="seo-analysis">
+                    <h3>🎯 SEO Analysis ${googleBadge} ${bingBadge}</h3>
+                    <div class="seo-section">
+                        <strong>Findings</strong>
+                        <div class="seo-content">${marked.parse(seo.findings || 'No findings available')}</div>
+                    </div>
+                    <div class="seo-section">
+                        <strong>Recommendations</strong>
+                        <div class="seo-content">${marked.parse(seo.recommendations || 'No recommendations available')}</div>
+                    </div>
+                    <div class="seo-section">
+                        <strong>Require Attention</strong>
+                        <div class="seo-content">${marked.parse(seo.require_attention || 'No critical issues')}</div>
+                    </div>
+                </div>
+            `;
+
+            chatContainer.appendChild(seoEl);
             chatContainer.scrollTop = chatContainer.scrollHeight;
-
-            return messageEl;
         }
 
-        function sendMessage() {
+        function clearChat() {
+            document.getElementById('chatContainer').innerHTML = '';
+        }
+
+        // User action handlers
+        async function sendMessage() {
             const input = document.getElementById('urlInput');
             const url = input.value.trim();
 
-            if (!url || !ws || ws.readyState !== WebSocket.OPEN) {
+            if (!url) return;
+
+            if (!state.socket || !state.socket.connected) {
+                addMessage('error', '✗ Not connected to server');
                 return;
             }
 
-            // Get selected mode
-            const mode = document.querySelector('input[name="mode"]:checked').value;
-
-            // Display user URL
+            // Display user input
             addMessage('user', url);
 
-            // Send to server with mode
-            ws.send(JSON.stringify({ url: url, mode: mode }));
+            // Get selected scan method
+            const scanMethod = document.querySelector('input[name="scanMethod"]:checked').value;
+
+            try {
+                if (scanMethod === 'api') {
+                    // Create scan via REST API (recommended)
+                    await createScanViaAPI(url);
+                } else {
+                    // Create scan via Socket.io
+                    createScanViaSocket(url, 'structured');
+                }
+            } catch (error) {
+                // Error already handled in respective functions
+            }
 
             // Clear input
             input.value = '';
         }
 
-        function sendQuickURL(url) {
-            if (!ws || ws.readyState !== WebSocket.OPEN) {
+        async function sendQuickURL(url) {
+            if (!state.socket || !state.socket.connected) {
+                addMessage('error', '✗ Not connected to server');
                 return;
             }
 
-            // Get selected mode
-            const mode = document.querySelector('input[name="mode"]:checked').value;
-
-            // Display user URL
             addMessage('user', url);
 
-            // Send to server with mode
-            ws.send(JSON.stringify({ url: url, mode: mode }));
-        }
+            const scanMethod = document.querySelector('input[name="scanMethod"]:checked').value;
 
-        function clearChat() {
-            document.getElementById('chatContainer').innerHTML = '';
+            try {
+                if (scanMethod === 'api') {
+                    await createScanViaAPI(url);
+                } else {
+                    createScanViaSocket(url, 'structured');
+                }
+            } catch (error) {
+                // Error already handled
+            }
         }
 
         function handleKeyPress(event) {
@@ -495,8 +820,11 @@
             }
         }
 
-        // Connect on page load
-        connect();
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('Page loaded, initializing Socket.io...');
+            initializeSocket();
+        });
     </script>
 </body>
 </html>

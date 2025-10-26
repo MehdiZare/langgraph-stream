@@ -42,3 +42,11 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+terraform-bootstrap.tfstate
+terraform-bootstrap.tfstate.backup
