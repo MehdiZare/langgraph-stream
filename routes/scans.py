@@ -10,7 +10,7 @@ import logging
 from typing import Optional
 from urllib.parse import urlparse
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, HTTPException, Header, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel, Field
 
 from utils import validate_url
@@ -144,7 +144,6 @@ def format_scan_response(scan: dict, website: Optional[dict] = None) -> dict:
 @router.post("/scans", response_model=CreateScanResponse)
 async def create_scan_endpoint(
     request: CreateScanRequest,
-    background_tasks: BackgroundTasks,
     authorization: Optional[str] = Header(None),
     x_session_id: Optional[str] = Header(None, alias="X-Session-ID")
 ):
@@ -188,13 +187,14 @@ async def create_scan_endpoint(
 
         # Start background processing
         processor = get_scan_processor()
-        background_tasks.add_task(
-            processor.process_scan,
-            url=request.url,
-            user_id=user_id,
-            session_id=session_id,
-            mode="structured",
-            scan_id=scan['id']
+        asyncio.create_task(
+            processor.process_scan(
+                url=request.url,
+                user_id=user_id,
+                session_id=session_id,
+                mode="structured",
+                scan_id=scan['id']
+            )
         )
 
         # Return scan details

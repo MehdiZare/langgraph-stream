@@ -691,26 +691,35 @@
             const analysisEl = document.createElement('div');
             analysisEl.className = 'message assistant structured';
 
+            // Sanitize all user-controlled fields to prevent XSS
+            const sanitizedType = DOMPurify.sanitize(analysis.website_type || 'N/A');
+            const sanitizedGoal = DOMPurify.sanitize(analysis.primary_goal || 'N/A');
+            const sanitizedDescription = DOMPurify.sanitize(analysis.description || 'N/A');
+            const sanitizedFeatures = (analysis.key_features || [])
+                .map(f => `<li>${DOMPurify.sanitize(f)}</li>`)
+                .join('');
+            const sanitizedKeywords = DOMPurify.sanitize((analysis.keywords || []).join(', ') || 'N/A');
+
             analysisEl.innerHTML = `
                 <div class="structured-analysis">
                     <h3>📊 Website Analysis</h3>
                     <div class="analysis-field">
-                        <strong>Type:</strong> ${analysis.website_type || 'N/A'}
+                        <strong>Type:</strong> ${sanitizedType}
                     </div>
                     <div class="analysis-field">
-                        <strong>Primary Goal:</strong> ${analysis.primary_goal || 'N/A'}
+                        <strong>Primary Goal:</strong> ${sanitizedGoal}
                     </div>
                     <div class="analysis-field">
-                        <strong>Description:</strong> ${analysis.description || 'N/A'}
+                        <strong>Description:</strong> ${sanitizedDescription}
                     </div>
                     <div class="analysis-field">
                         <strong>Key Features:</strong>
                         <ul>
-                            ${(analysis.key_features || []).map(f => `<li>${f}</li>`).join('')}
+                            ${sanitizedFeatures}
                         </ul>
                     </div>
                     <div class="analysis-field">
-                        <strong>Keywords:</strong> ${(analysis.keywords || []).join(', ') || 'N/A'}
+                        <strong>Keywords:</strong> ${sanitizedKeywords}
                     </div>
                 </div>
             `;

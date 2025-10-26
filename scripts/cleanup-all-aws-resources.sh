@@ -14,7 +14,7 @@
 # Usage: ./cleanup-all-aws-resources.sh
 #
 
-set -e
+set -euo pipefail
 
 # Colors
 RED='\033[0;31m'
@@ -170,10 +170,22 @@ BUCKETS=$(aws s3api list-buckets \
 
 for BUCKET in $BUCKETS; do
     echo "  Emptying bucket: $BUCKET"
-    aws s3 rm s3://$BUCKET --recursive &>/dev/null || true
+
+    # Delete all object versions (handles versioned buckets)
+    aws s3api list-object-versions --bucket "$BUCKET" --query 'Versions[].{Key:Key,VersionId:VersionId}' --output json 2>/dev/null | \
+      jq -r '.[] | "--key \"\(.Key)\" --version-id \(.VersionId)"' 2>/dev/null | \
+      xargs -I {} aws s3api delete-object --bucket "$BUCKET" {} &>/dev/null || true
+
+    # Delete all delete markers
+    aws s3api list-object-versions --bucket "$BUCKET" --query 'DeleteMarkers[].{Key:Key,VersionId:VersionId}' --output json 2>/dev/null | \
+      jq -r '.[] | "--key \"\(.Key)\" --version-id \(.VersionId)"' 2>/dev/null | \
+      xargs -I {} aws s3api delete-object --bucket "$BUCKET" {} &>/dev/null || true
+
+    # Delete current objects (for non-versioned or as fallback)
+    aws s3 rm "s3://$BUCKET" --recursive &>/dev/null || true
 
     echo "  Deleting bucket: $BUCKET"
-    aws s3api delete-bucket --bucket $BUCKET 2>/dev/null || true
+    aws s3api delete-bucket --bucket "$BUCKET" 2>/dev/null || true
     count_deleted
 done
 

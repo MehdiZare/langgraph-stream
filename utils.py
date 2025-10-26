@@ -9,15 +9,26 @@ from urllib.parse import urlparse
 
 def normalize_url(url: str) -> str:
     """
-    Normalize URL to lowercase for consistent caching.
+    Normalize URL for consistent caching.
+    Only lowercases the protocol and domain to preserve case-sensitive paths.
 
     Args:
         url: URL to normalize
 
     Returns:
-        Normalized URL in lowercase
+        Normalized URL with lowercase protocol and domain
     """
-    return url.lower().strip()
+    url = url.strip()
+    parsed = urlparse(url)
+
+    # Lowercase only the scheme and netloc (domain)
+    # Keep path, params, query, and fragment as-is (they can be case-sensitive)
+    normalized = parsed._replace(
+        scheme=parsed.scheme.lower(),
+        netloc=parsed.netloc.lower()
+    )
+
+    return normalized.geturl()
 
 
 def validate_url(url: str) -> bool:
