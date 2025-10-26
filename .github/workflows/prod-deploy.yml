@@ -19,6 +19,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      deployments: write
 
     steps:
       - name: Checkout code
@@ -90,34 +91,26 @@ jobs:
             --services $ECS_SERVICE \
             --region $AWS_REGION
 
-      - name: Get service details
+      - name: Setup Terraform
         if: steps.check-service.outputs.exists == 'true'
-        id: service-details
+        uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          terraform_version: "1.9.0"
+
+      - name: Get service URL
+        if: steps.check-service.outputs.exists == 'true'
+        id: service-url
+        working-directory: infra/environments/prod
         run: |
-          # Get the ALB target group ARN
-          TG_ARN=$(aws ecs describe-services \
-            --cluster $ECS_CLUSTER \
-            --services $ECS_SERVICE \
-            --region $AWS_REGION \
-            --query 'services[0].loadBalancers[0].targetGroupArn' \
-            --output text)
+          # Initialize Terraform to access outputs
+          terraform init
 
-          # Get the ALB ARN from target group
-          ALB_ARN=$(aws elbv2 describe-target-groups \
-            --target-group-arns $TG_ARN \
-            --region $AWS_REGION \
-            --query 'TargetGroups[0].LoadBalancerArns[0]' \
-            --output text)
+          # Get the production URL from Terraform (uses Cloudflare domain)
+          PROD_URL=$(terraform output -raw alb_url)
 
-          # Get the ALB DNS name
-          ALB_DNS=$(aws elbv2 describe-load-balancers \
-            --load-balancer-arns $ALB_ARN \
-            --region $AWS_REGION \
-            --query 'LoadBalancers[0].DNSName' \
-            --output text)
-
-          echo "alb_dns=$ALB_DNS" >> $GITHUB_OUTPUT
-          echo "Production URL: http://$ALB_DNS"
+          echo "prod_url=$PROD_URL" >> $GITHUB_OUTPUT
+          echo "Production URL: $PROD_URL"
 
       - name: Deployment summary
         run: |
@@ -130,11 +123,11 @@ jobs:
 
           if [ "${{ steps.check-service.outputs.exists }}" == "true" ]; then
             echo "**ECS Service:** Updated and stable" >> $GITHUB_STEP_SUMMARY
-            echo "**Production URL:** http://${{ steps.service-details.outputs.alb_dns }}" >> $GITHUB_STEP_SUMMARY
+            echo "**Production URL:** ${{ steps.service-url.outputs.prod_url }}" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "**Health Check:**" >> $GITHUB_STEP_SUMMARY
             echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-            echo "curl http://${{ steps.service-details.outputs.alb_dns }}/health" >> $GITHUB_STEP_SUMMARY
+            echo "curl ${{ steps.service-url.outputs.prod_url }}/health" >> $GITHUB_STEP_SUMMARY
             echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           else
             echo "**ECS Service:** Not yet created" >> $GITHUB_STEP_SUMMARY
@@ -165,7 +158,7 @@ jobs:
                 repo: context.repo.repo,
                 deployment_id: deployment.data.id,
                 state: 'success',
-                environment_url: 'http://${{ steps.service-details.outputs.alb_dns }}',
+                environment_url: '${{ steps.service-url.outputs.prod_url }}',
                 description: 'Deployment successful'
               });
             }
