@@ -6,6 +6,7 @@ Provides HTTP endpoints for scan CRUD operations.
 
 import uuid
 import asyncio
+import logging
 from typing import Optional
 from urllib.parse import urlparse
 from datetime import datetime, timedelta, timezone
@@ -26,6 +27,9 @@ from db import (
 )
 from services.scan_processor import get_scan_processor
 
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["scans"])
 
@@ -104,7 +108,7 @@ def generate_session_id() -> str:
     return str(uuid.uuid4())
 
 
-def format_scan_response(scan: dict, website: dict = None) -> dict:
+def format_scan_response(scan: dict, website: Optional[dict] = None) -> dict:
     """
     Format scan data for API response.
 
@@ -205,8 +209,23 @@ async def create_scan_endpoint(
             created_at=scan['created_at']
         )
 
+    except ValueError as e:
+        # URL parsing or validation errors
+        logger.exception("Invalid data when creating scan")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid data provided for scan creation"
+        ) from e
+    except HTTPException:
+        # Re-raise HTTP exceptions (like 400 from validation)
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error creating scan: {str(e)}")
+        # Catch-all for unexpected errors (database, network, etc.)
+        logger.exception("Unexpected error creating scan")
+        raise HTTPException(
+            status_code=500,
+            detail="Error creating scan"
+        ) from e
 
 
 @router.get("/scans/{scan_id}", response_model=GetScanResponse)
@@ -321,8 +340,20 @@ async def claim_scans_endpoint(
             message=f"Successfully claimed {claimed_count} scan(s)"
         )
 
+    except ValueError as e:
+        # Invalid session_id or user_id
+        logger.exception("Invalid data when claiming scans")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid session or user data"
+        ) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error claiming scans: {str(e)}")
+        # Database errors or other unexpected issues
+        logger.exception("Unexpected error claiming scans")
+        raise HTTPException(
+            status_code=500,
+            detail="Error claiming scans"
+        ) from e
 
 
 @router.get("/scans/{scan_id}/assets", response_model=GetAssetsResponse)

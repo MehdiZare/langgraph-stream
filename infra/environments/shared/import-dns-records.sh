@@ -28,16 +28,37 @@ ZONE_NAME="roboad.ai"
 
 echo -e "${YELLOW}Step 1: Getting Cloudflare Zone ID for ${ZONE_NAME}...${NC}"
 
-# Get zone ID
-ZONE_RESPONSE=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=${ZONE_NAME}" \
+# Get zone ID using jq for proper JSON parsing
+ZONE_RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "https://api.cloudflare.com/client/v4/zones?name=${ZONE_NAME}" \
   -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
   -H "Content-Type: application/json")
 
-ZONE_ID=$(echo "$ZONE_RESPONSE" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+# Extract HTTP status code and response body
+HTTP_CODE=$(echo "$ZONE_RESPONSE" | tail -n1)
+ZONE_BODY=$(echo "$ZONE_RESPONSE" | sed '$d')
+
+# Check curl success
+if [ "$HTTP_CODE" != "200" ]; then
+    echo -e "${RED}Error: API request failed with HTTP status ${HTTP_CODE}${NC}"
+    echo "Response: $ZONE_BODY"
+    exit 1
+fi
+
+# Check API response success field
+SUCCESS=$(echo "$ZONE_BODY" | jq -r '.success // false')
+if [ "$SUCCESS" != "true" ]; then
+    echo -e "${RED}Error: Cloudflare API returned an error${NC}"
+    ERRORS=$(echo "$ZONE_BODY" | jq -r '.errors // []')
+    echo "Errors: $ERRORS"
+    exit 1
+fi
+
+# Extract zone ID
+ZONE_ID=$(echo "$ZONE_BODY" | jq -r '.result[0].id // empty')
 
 if [ -z "$ZONE_ID" ]; then
     echo -e "${RED}Error: Could not find zone ID for ${ZONE_NAME}${NC}"
-    echo "Response: $ZONE_RESPONSE"
+    echo "Response: $ZONE_BODY"
     exit 1
 fi
 

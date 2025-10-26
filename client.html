@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Website Scanner - Socket.io</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js"></script>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
         * {
@@ -733,20 +734,25 @@
                 ? `<span class="ranking-badge bing">Bing #${seo.bing_ranking}</span>`
                 : `<span class="ranking-badge not-ranked">Not in Top 10</span>`;
 
+            // Sanitize markdown output to prevent XSS attacks
+            const sanitizedFindings = DOMPurify.sanitize(marked.parse(seo.findings || 'No findings available'));
+            const sanitizedRecommendations = DOMPurify.sanitize(marked.parse(seo.recommendations || 'No recommendations available'));
+            const sanitizedAttention = DOMPurify.sanitize(marked.parse(seo.require_attention || 'No critical issues'));
+
             seoEl.innerHTML = `
                 <div class="seo-analysis">
                     <h3>🎯 SEO Analysis ${googleBadge} ${bingBadge}</h3>
                     <div class="seo-section">
                         <strong>Findings</strong>
-                        <div class="seo-content">${marked.parse(seo.findings || 'No findings available')}</div>
+                        <div class="seo-content">${sanitizedFindings}</div>
                     </div>
                     <div class="seo-section">
                         <strong>Recommendations</strong>
-                        <div class="seo-content">${marked.parse(seo.recommendations || 'No recommendations available')}</div>
+                        <div class="seo-content">${sanitizedRecommendations}</div>
                     </div>
                     <div class="seo-section">
                         <strong>Require Attention</strong>
-                        <div class="seo-content">${marked.parse(seo.require_attention || 'No critical issues')}</div>
+                        <div class="seo-content">${sanitizedAttention}</div>
                     </div>
                 </div>
             `;

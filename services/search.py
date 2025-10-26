@@ -5,6 +5,7 @@ Handles search engine queries using SerpAPI for Google and Bing.
 """
 
 from typing import List
+from urllib.parse import urlparse
 from serpapi import GoogleSearch
 
 from config import SERPAPI_KEY
@@ -101,12 +102,33 @@ def find_url_ranking(url: str, organic_results: List[dict]) -> int | None:
     Returns:
         Position (1-based) or None if not found in top results
     """
-    # Normalize the URL for comparison
-    normalized_url = normalize_url(url)
+    # Parse the target URL and extract normalized domain
+    try:
+        parsed_target = urlparse(normalize_url(url))
+        target_netloc = parsed_target.netloc.lower()
+        # Strip "www." prefix for comparison
+        if target_netloc.startswith("www."):
+            target_netloc = target_netloc[4:]
+    except (ValueError, AttributeError):
+        return None
 
     for idx, result in enumerate(organic_results, start=1):
         result_url = result.get("link", "")
-        if normalized_url in normalize_url(result_url) or normalize_url(result_url) in normalized_url:
-            return idx
+        if not result_url:
+            continue
+
+        try:
+            # Parse result URL and extract normalized domain
+            parsed_result = urlparse(normalize_url(result_url))
+            result_netloc = parsed_result.netloc.lower()
+            # Strip "www." prefix for comparison
+            if result_netloc.startswith("www."):
+                result_netloc = result_netloc[4:]
+
+            # Match if domains are identical
+            if target_netloc == result_netloc:
+                return idx
+        except (ValueError, AttributeError):
+            continue
 
     return None
