@@ -34,7 +34,7 @@ if REDIS_URL:
     sio = socketio.AsyncServer(
         async_mode='asgi',
         client_manager=mgr,
-        cors_allowed_origins='*',  # Configure appropriately for production
+        cors_allowed_origins=[],  # Let FastAPI's CORSMiddleware handle CORS
         logger=True,
         engineio_logger=True
     )
@@ -43,7 +43,7 @@ else:
     # Use in-memory manager for development (single instance only)
     sio = socketio.AsyncServer(
         async_mode='asgi',
-        cors_allowed_origins='*',  # Configure appropriately for production
+        cors_allowed_origins=[],  # Let FastAPI's CORSMiddleware handle CORS
         logger=True,
         engineio_logger=True
     )
