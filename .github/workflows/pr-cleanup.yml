@@ -61,17 +61,70 @@ jobs:
           fi
 
       - name: Terraform Init and Destroy
+        id: terraform-destroy
         if: steps.check-workspace.outputs.exists == 'true'
         working-directory: infra/environments/pr-template
         env:
           TF_WORKSPACE: ${{ env.TF_WORKSPACE_PREFIX }}-${{ github.event.pull_request.number }}
           VERCEL_API_TOKEN: ${{ secrets.VERCEL_API_TOKEN }}
         run: |
+          set +e  # Don't exit on error, we'll handle it
           terraform init
           terraform destroy -auto-approve \
             -var="pr_number=${{ github.event.pull_request.number }}" \
             -var="vercel_project_id=${{ secrets.VERCEL_PROJECT_ID }}" \
-            -var="vercel_team_id=${{ secrets.VERCEL_TEAM_ID }}" || true
+            -var="vercel_team_id=${{ secrets.VERCEL_TEAM_ID }}"
+
+          DESTROY_EXIT_CODE=$?
+          echo "destroy_exit_code=$DESTROY_EXIT_CODE" >> $GITHUB_OUTPUT
+
+          if [ $DESTROY_EXIT_CODE -ne 0 ]; then
+            echo "⚠️ Terraform destroy failed with exit code $DESTROY_EXIT_CODE"
+            echo "Will attempt fallback cleanup using AWS CLI..."
+            exit 0  # Don't fail the step yet, we'll try fallback cleanup
+          else
+            echo "✓ Terraform destroy completed successfully"
+          fi
+
+      - name: Verify AWS resources are deleted
+        id: verify-cleanup
+        if: steps.check-workspace.outputs.exists == 'true'
+        run: |
+          echo "Checking for remaining AWS resources..."
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          PR_PREFIX="roboad-backend-pr-${PR_NUMBER}"
+
+          # Check ECS cluster
+          CLUSTER=$(aws ecs describe-clusters --region $AWS_REGION \
+            --clusters "${PR_PREFIX}" --query "clusters[0].clusterName" --output text 2>/dev/null || echo "")
+
+          # Check load balancer
+          ALB=$(aws elbv2 describe-load-balancers --region $AWS_REGION \
+            --query "LoadBalancers[?LoadBalancerName=='${PR_PREFIX}-alb'].LoadBalancerArn" --output text 2>/dev/null || echo "")
+
+          # Check target groups
+          TG=$(aws elbv2 describe-target-groups --region $AWS_REGION \
+            --query "TargetGroups[?TargetGroupName=='${PR_PREFIX}-tg'].TargetGroupArn" --output text 2>/dev/null || echo "")
+
+          if [ -n "$CLUSTER" ] || [ -n "$ALB" ] || [ -n "$TG" ]; then
+            echo "resources_remain=true" >> $GITHUB_OUTPUT
+            echo "⚠️ AWS resources still exist after Terraform destroy!"
+            [ -n "$CLUSTER" ] && echo "  - ECS Cluster: $CLUSTER"
+            [ -n "$ALB" ] && echo "  - Load Balancer: $ALB"
+            [ -n "$TG" ] && echo "  - Target Group: $TG"
+          else
+            echo "resources_remain=false" >> $GITHUB_OUTPUT
+            echo "✓ All AWS resources have been deleted"
+          fi
+
+      - name: Fallback AWS cleanup
+        if: |
+          steps.check-workspace.outputs.exists == 'true' &&
+          (steps.terraform-destroy.outputs.destroy_exit_code != '0' || steps.verify-cleanup.outputs.resources_remain == 'true')
+        run: |
+          echo "Running fallback AWS CLI cleanup..."
+          chmod +x scripts/cleanup-aws-resources.sh
+          ./scripts/cleanup-aws-resources.sh ${{ github.event.pull_request.number }}
 
       - name: Delete Terraform Cloud workspace
         if: steps.check-workspace.outputs.exists == 'true'
@@ -102,20 +155,34 @@ jobs:
           script: |
             const prNumber = context.payload.pull_request.number;
             const wasDestroyed = '${{ steps.check-workspace.outputs.exists }}' === 'true';
+            const destroyFailed = '${{ steps.terraform-destroy.outputs.destroy_exit_code }}' !== '0';
+            const resourcesRemained = '${{ steps.verify-cleanup.outputs.resources_remain }}' === 'true';
+            const usedFallback = destroyFailed || resourcesRemained;
 
             let comment;
             if (wasDestroyed) {
-              comment = `## ✅ PR Environment Cleaned Up
+              let statusIcon = '✅';
+              let statusText = 'successfully destroyed';
+              let additionalInfo = '';
 
-              Your PR environment has been successfully destroyed.
+              if (usedFallback) {
+                statusIcon = '⚠️';
+                statusText = 'cleaned up using fallback AWS CLI';
+                additionalInfo = `\n\n**Note:** Terraform destroy ${destroyFailed ? 'failed' : 'left resources behind'}, so fallback AWS CLI cleanup was used to ensure all resources were removed.`;
+              }
+
+              comment = `## ${statusIcon} PR Environment Cleaned Up
+
+              Your PR environment has been ${statusText}.
 
               **Cleaned up resources:**
               - ECS Service and tasks
               - Application Load Balancer
+              - Target groups and listeners
               - Security groups
               - ECR image (tag: \`pr-${prNumber}\`)
               - Terraform Cloud workspace
-              - Vercel environment variables (backend URLs)
+              - Vercel environment variables (backend URLs)${additionalInfo}
 
               All resources associated with PR #${prNumber} have been removed.
               Vercel preview deployments will be automatically cleaned up by Vercel.
@@ -139,8 +206,22 @@ jobs:
           echo "## PR Environment Cleanup Complete" >> $GITHUB_STEP_SUMMARY
           echo "**PR:** #${{ github.event.pull_request.number }}" >> $GITHUB_STEP_SUMMARY
           echo "**Workspace existed:** ${{ steps.check-workspace.outputs.exists }}" >> $GITHUB_STEP_SUMMARY
+
           if [ "${{ steps.check-workspace.outputs.exists }}" == "true" ]; then
-            echo "**Status:** All resources destroyed successfully" >> $GITHUB_STEP_SUMMARY
+            DESTROY_EXIT_CODE="${{ steps.terraform-destroy.outputs.destroy_exit_code }}"
+            RESOURCES_REMAIN="${{ steps.verify-cleanup.outputs.resources_remain }}"
+
+            if [ "$DESTROY_EXIT_CODE" != "0" ]; then
+              echo "**Terraform destroy:** Failed (exit code $DESTROY_EXIT_CODE)" >> $GITHUB_STEP_SUMMARY
+              echo "**Fallback cleanup:** Executed" >> $GITHUB_STEP_SUMMARY
+            elif [ "$RESOURCES_REMAIN" == "true" ]; then
+              echo "**Terraform destroy:** Completed but resources remained" >> $GITHUB_STEP_SUMMARY
+              echo "**Fallback cleanup:** Executed" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "**Terraform destroy:** Successful" >> $GITHUB_STEP_SUMMARY
+              echo "**Fallback cleanup:** Not needed" >> $GITHUB_STEP_SUMMARY
+            fi
+            echo "**Status:** All resources cleaned up ✓" >> $GITHUB_STEP_SUMMARY
           else
             echo "**Status:** No resources found to clean up" >> $GITHUB_STEP_SUMMARY
           fi
