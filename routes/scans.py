@@ -141,13 +141,14 @@ def format_scan_response(scan: dict, website: dict = None) -> dict:
 async def create_scan_endpoint(
     request: CreateScanRequest,
     background_tasks: BackgroundTasks,
-    authorization: Optional[str] = Header(None)
+    authorization: Optional[str] = Header(None),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID")
 ):
     """
     Create a new scan.
 
     - **Authenticated users**: Provide Authorization header with Clerk JWT token
-    - **Anonymous users**: Scan created with generated session_id
+    - **Anonymous users**: Provide X-Session-ID header with session_id from Socket.io auth
 
     After creation, scan processing starts in the background.
     Connect to WebSocket and join the scan room to receive real-time updates.
@@ -164,8 +165,8 @@ async def create_scan_endpoint(
     # Extract user_id from auth header
     user_id = get_user_id_from_auth_header(authorization)
 
-    # Generate session_id for anonymous users
-    session_id = None if user_id else generate_session_id()
+    # Use client-provided session_id or generate new one for anonymous users
+    session_id = None if user_id else (x_session_id or generate_session_id())
 
     try:
         # Parse URL
