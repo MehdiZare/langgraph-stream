@@ -6,6 +6,7 @@ Integrates Socket.io for real-time WebSocket communication.
 """
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 import socketio
 
 from routes.health import router as health_router
@@ -20,6 +21,20 @@ app = FastAPI(
     title="Website Scanner API",
     description="AI-powered website screenshot analyzer with real-time scan updates",
     version="0.2.0"
+)
+
+# Configure CORS to allow frontend access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",          # Local development
+        "https://*.vercel.app",           # All Vercel preview deployments
+        "https://roboad.ai",              # Production domain
+        "https://*.roboad.ai",            # Any roboad.ai subdomains
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all HTTP methods (GET, POST, OPTIONS, etc.)
+    allow_headers=["*"],  # Allow all headers
 )
 
 # Register REST API routers
