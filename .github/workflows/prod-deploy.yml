@@ -13,13 +13,16 @@ env:
   ECS_SERVICE: roboad-backend-prod-service
 
 jobs:
-  deploy:
-    name: Deploy to Production
+  deploy-backend:
+    name: Deploy Backend to Production
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
       deployments: write
+    outputs:
+      backend_url: ${{ steps.service-url.outputs.prod_url }}
+      image_tag: ${{ steps.build-image.outputs.image }}
 
     steps:
       - name: Checkout code
@@ -112,9 +115,9 @@ jobs:
           echo "prod_url=$PROD_URL" >> $GITHUB_OUTPUT
           echo "Production URL: $PROD_URL"
 
-      - name: Deployment summary
+      - name: Backend deployment summary
         run: |
-          echo "## Production Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "## Backend Deployment Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Images pushed:**" >> $GITHUB_STEP_SUMMARY
           echo "- Latest: \`${{ steps.build-image.outputs.image }}\`" >> $GITHUB_STEP_SUMMARY
@@ -123,12 +126,14 @@ jobs:
 
           if [ "${{ steps.check-service.outputs.exists }}" == "true" ]; then
             echo "**ECS Service:** Updated and stable" >> $GITHUB_STEP_SUMMARY
-            echo "**Production URL:** ${{ steps.service-url.outputs.prod_url }}" >> $GITHUB_STEP_SUMMARY
+            echo "**Backend URL:** ${{ steps.service-url.outputs.prod_url }}" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "**Health Check:**" >> $GITHUB_STEP_SUMMARY
             echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
             echo "curl ${{ steps.service-url.outputs.prod_url }}/health" >> $GITHUB_STEP_SUMMARY
             echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "⏳ **Next:** Frontend deployment starting..." >> $GITHUB_STEP_SUMMARY
           else
             echo "**ECS Service:** Not yet created" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
@@ -138,8 +143,91 @@ jobs:
             echo "Deploy the production environment by running Terraform in the \`roboad-fast-ws-prod\` workspace." >> $GITHUB_STEP_SUMMARY
           fi
 
+  deploy-frontend:
+    name: Deploy Frontend to Production
+    runs-on: ubuntu-latest
+    needs: deploy-backend
+    if: needs.deploy-backend.outputs.backend_url != ''
+    permissions:
+      contents: read
+      deployments: write
+
+    steps:
+      - name: Checkout frontend repository
+        uses: actions/checkout@v5
+        with:
+          repository: RoboAdApp/roboad-front-end
+          ref: main
+          token: ${{ secrets.FRONTEND_REPO_TOKEN }}
+
+      - name: Deploy to Vercel Production
+        id: deploy-vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_API_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_TEAM_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          BACKEND_URL: ${{ needs.deploy-backend.outputs.backend_url }}
+        run: |
+          echo "Deploying frontend to Vercel production..."
+          echo "Backend URL: $BACKEND_URL"
+          echo "Project ID: $VERCEL_PROJECT_ID"
+          echo "Org ID: $VERCEL_ORG_ID"
+          echo ""
+
+          # Install Vercel CLI
+          npm install -g vercel@latest
+
+          # Deploy to production using Vercel CLI
+          echo "Running vercel deploy --prod..."
+          set +e  # Don't exit on error, we want to capture it
+          vercel deploy \
+            --prod \
+            --token=$VERCEL_TOKEN \
+            --scope=$VERCEL_ORG_ID \
+            --build-env NEXT_PUBLIC_BACKEND_URL=$BACKEND_URL \
+            --yes \
+            2>&1 | tee /tmp/vercel-deploy.log
+
+          EXIT_CODE=${PIPESTATUS[0]}
+          set -e  # Re-enable exit on error
+
+          echo ""
+          echo "Vercel CLI exit code: $EXIT_CODE"
+          echo ""
+
+          if [ $EXIT_CODE -eq 0 ]; then
+            # Extract URL from output
+            DEPLOYMENT_URL=$(grep -oP 'https://[^\s]+' /tmp/vercel-deploy.log | grep -E '(vercel\.app|your-domain\.com)' | tail -1)
+
+            if [ -n "$DEPLOYMENT_URL" ]; then
+              echo "vercel_url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT
+              echo "✅ Successfully deployed to Vercel production!"
+              echo "   URL: $DEPLOYMENT_URL"
+            else
+              # Fallback - assume production domain
+              echo "vercel_url=https://roboad.ai" >> $GITHUB_OUTPUT
+              echo "✅ Deployment completed!"
+            fi
+          else
+            echo "vercel_url=Failed" >> $GITHUB_OUTPUT
+            echo "❌ Vercel deployment failed with exit code $EXIT_CODE"
+            echo ""
+            echo "Full deployment output:"
+            cat /tmp/vercel-deploy.log
+            exit 1
+          fi
+
+      - name: Frontend deployment summary
+        run: |
+          echo "## Frontend Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Frontend URL:** ${{ steps.deploy-vercel.outputs.vercel_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Backend URL:** ${{ needs.deploy-backend.outputs.backend_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment Variables:**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`NEXT_PUBLIC_BACKEND_URL\`: ${{ needs.deploy-backend.outputs.backend_url }}" >> $GITHUB_STEP_SUMMARY
+
       - name: Create GitHub deployment
-        if: steps.check-service.outputs.exists == 'true'
         uses: actions/github-script@v8
         with:
           script: |
@@ -158,7 +246,7 @@ jobs:
                 repo: context.repo.repo,
                 deployment_id: deployment.data.id,
                 state: 'success',
-                environment_url: '${{ steps.service-url.outputs.prod_url }}',
-                description: 'Deployment successful'
+                environment_url: '${{ steps.deploy-vercel.outputs.vercel_url }}',
+                description: 'Production deployment successful'
               });
             }
