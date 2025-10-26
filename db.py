@@ -383,21 +383,30 @@ async def can_access_scan(
         response = supabase.table('scans').select('*').eq('id', scan_id).execute()
 
         if not response.data or len(response.data) == 0:
+            logger.info(f"can_access_scan({scan_id}) - Scan not found in database")
             return False
 
         scan = response.data[0]
 
+        # Debug logging
+        logger.info(f"can_access_scan({scan_id}) - Checking access:")
+        logger.info(f"  - Scan user_id: {scan.get('user_id')}, Scan session_id: {scan.get('session_id')}")
+        logger.info(f"  - Request user_id: {user_id}, Request session_id: {session_id}")
+
         # Check if user owns the scan
         if user_id and scan.get('user_id') == user_id:
+            logger.info(f"can_access_scan({scan_id}) - Access granted: user_id match")
             return True
 
         # Check if session matches for anonymous scan
         if session_id and scan.get('session_id') == session_id:
+            logger.info(f"can_access_scan({scan_id}) - Access granted: session_id match")
             return True
 
+        logger.warning(f"can_access_scan({scan_id}) - Access denied: no match")
         return False
     except Exception as e:
-        print(f"Error checking scan access: {e}")
+        logger.error(f"Error checking scan access: {e}")
         return False
 
 
@@ -422,6 +431,7 @@ async def get_scan_by_id(
     # Check access first
     has_access = await can_access_scan(supabase, scan_id, user_id, session_id)
     if not has_access:
+        logger.info(f"get_scan_by_id({scan_id}) - Access denied, returning None")
         return None
 
     try:
@@ -431,11 +441,13 @@ async def get_scan_by_id(
         ).eq('id', scan_id).execute()
 
         if response.data and len(response.data) > 0:
+            logger.info(f"get_scan_by_id({scan_id}) - Scan found and returned")
             return response.data[0]
 
+        logger.warning(f"get_scan_by_id({scan_id}) - Scan not found after access check passed")
         return None
     except Exception as e:
-        print(f"Error getting scan: {e}")
+        logger.error(f"Error getting scan: {e}")
         return None
 
 

@@ -591,11 +591,21 @@
             try {
                 updateStatus('processing', '⏳ Creating scan...');
 
+                const headers = {
+                    'Content-Type': 'application/json'
+                };
+
+                // Include session_id if available (for anonymous users)
+                if (state.sessionId) {
+                    headers['X-Session-ID'] = state.sessionId;
+                    console.log('Sending X-Session-ID header:', state.sessionId);
+                } else {
+                    console.warn('No session_id available - scan may not be accessible later');
+                }
+
                 const response = await fetch('/api/scans', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: headers,
                     body: JSON.stringify({ url: url })
                 });
 

@@ -176,6 +176,11 @@ async def create_scan_endpoint(
         parsed_url = urlparse(request.url)
         domain = parsed_url.netloc
 
+        # Debug logging for scan creation
+        logger.info(f"POST /scans - Creating scan for URL: {request.url}")
+        logger.info(f"POST /scans - user_id: {user_id}, session_id: {session_id}")
+        logger.info(f"POST /scans - x_session_id header: {x_session_id}")
+
         # Create website and scan records
         website = await create_or_get_website(supabase, request.url, domain)
         scan = await create_scan(
@@ -184,6 +189,9 @@ async def create_scan_endpoint(
             user_id=user_id,
             session_id=session_id
         )
+
+        logger.info(f"POST /scans - Scan created successfully: {scan['id']}")
+        logger.info(f"POST /scans - Scan record: user_id={scan.get('user_id')}, session_id={scan.get('session_id')}")
 
         # Start background processing
         processor = get_scan_processor()
@@ -246,14 +254,39 @@ async def get_scan_endpoint(
     # Extract user_id from auth header
     user_id = get_user_id_from_auth_header(authorization)
 
+    # Debug logging
+    logger.info(f"GET /scans/{scan_id} - user_id: {user_id}, session_id: {session_id}")
+    logger.info(f"GET /scans/{scan_id} - auth header present: {authorization is not None}")
+
+    # Check if scan exists first (without access control)
+    check_response = supabase.table('scans').select('id, user_id, session_id').eq('id', scan_id).execute()
+    scan_exists = check_response.data and len(check_response.data) > 0
+
+    if not scan_exists:
+        logger.warning(f"GET /scans/{scan_id} - Scan does not exist in database")
+        raise HTTPException(
+            status_code=404,
+            detail="Scan not found"
+        )
+
     # Get scan with access verification
     scan = await get_scan_by_id(supabase, scan_id, user_id, session_id)
 
     if not scan:
-        raise HTTPException(
-            status_code=404,
-            detail="Scan not found or access denied"
-        )
+        # Scan exists but access is denied
+        logger.warning(f"GET /scans/{scan_id} - Access denied for user_id: {user_id}, session_id: {session_id}")
+
+        # Check if user needs to authenticate or provide session_id
+        if not user_id and not session_id:
+            raise HTTPException(
+                status_code=401,
+                detail="Authentication required. Please provide either Authorization header or X-Session-ID header."
+            )
+        else:
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied to this scan"
+            )
 
     # Format response
     formatted = format_scan_response(scan)
