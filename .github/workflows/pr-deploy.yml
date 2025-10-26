@@ -233,6 +233,30 @@ jobs:
             -var="pr_number=${{ github.event.pull_request.number }}" \
             -var="git_branch=${{ github.head_ref }}"
 
+      - name: Wait for ECS deployment to complete
+        working-directory: infra/environments/pr-template
+        env:
+          TF_WORKSPACE: ${{ env.TF_WORKSPACE_PREFIX }}-${{ github.event.pull_request.number }}
+        run: |
+          # Get the ECS cluster and service names from Terraform outputs
+          CLUSTER_NAME=$(terraform output -raw ecs_cluster_name)
+          SERVICE_NAME=$(terraform output -raw ecs_service_name)
+
+          echo "Waiting for ECS service to stabilize..."
+          echo "Cluster: $CLUSTER_NAME"
+          echo "Service: $SERVICE_NAME"
+          echo ""
+
+          # Wait for service to become stable (max 10 minutes)
+          aws ecs wait services-stable \
+            --cluster "$CLUSTER_NAME" \
+            --services "$SERVICE_NAME" \
+            --region ${{ env.AWS_REGION }}
+
+          echo ""
+          echo "✅ ECS deployment completed successfully"
+          echo "New container is now running and healthy"
+
       - name: Get deployment URLs
         id: get-urls
         working-directory: infra/environments/pr-template
