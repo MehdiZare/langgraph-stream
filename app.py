@@ -26,12 +26,7 @@ app = FastAPI(
 # Configure CORS to allow frontend access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",          # Local development
-        "https://*.vercel.app",           # All Vercel preview deployments
-        "https://roboad.ai",              # Production domain
-        "https://*.roboad.ai",            # Any roboad.ai subdomains
-    ],
+    allow_origin_regex=r'https://.*\.vercel\.app|http://localhost:3000|https://.*\.roboad\.ai|https://roboad\.ai',
     allow_credentials=True,
     allow_methods=["*"],  # Allow all HTTP methods (GET, POST, OPTIONS, etc.)
     allow_headers=["*"],  # Allow all headers
