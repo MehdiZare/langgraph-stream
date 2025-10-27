@@ -130,9 +130,6 @@ class ScanProcessor:
         if self.sio:
             # Compress screenshot for WebSocket transmission
             try:
-                from PIL import Image
-                import io
-
                 # Decode base64 to bytes
                 screenshot_bytes = base64.b64decode(screenshot_base64)
 
@@ -160,14 +157,15 @@ class ScanProcessor:
                     'screenshot': f'data:image/jpeg;base64,{compressed_base64}'
                 }, room=f'scan_{scan_id}')
 
-                print(f"Emitted compressed screenshot for scan {scan_id} (original: {len(screenshot_bytes)} bytes, compressed: {len(compressed_bytes)} bytes)")
+                logger.info(f"Emitted compressed screenshot for scan {scan_id} (original: {len(screenshot_bytes)} bytes, compressed: {len(compressed_bytes)} bytes)")
 
             except Exception as e:
-                print(f"Error compressing screenshot: {e}")
+                logger.warning(f"Error compressing screenshot for scan {scan_id}: {e}")
                 # Fall back to sending original if compression fails
+                # Note: fallback uses JPEG MIME since compression target was JPEG
                 await self.sio.emit('scan:screenshot', {
                     'scan_id': scan_id,
-                    'screenshot': f'data:image/png;base64,{screenshot_base64}'
+                    'screenshot': f'data:image/jpeg;base64,{screenshot_base64}'
                 }, room=f'scan_{scan_id}')
 
     async def _capture_and_emit_screenshot(
@@ -206,19 +204,32 @@ class ScanProcessor:
             await self.emit_screenshot(scan_id, screenshot_base64)
 
             # Upload screenshot to S3 (non-blocking)
+            # Normalize to PNG format before upload to ensure consistent format
             try:
                 screenshot_bytes = base64.b64decode(screenshot_base64)
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp_file:
-                    tmp_file.write(screenshot_bytes)
+
+                # Open with Pillow and normalize to PNG
+                img = Image.open(io.BytesIO(screenshot_bytes))
+
+                # Convert to appropriate mode for PNG
+                # Preserve alpha channel if present, otherwise convert to RGB
+                if img.mode in ('LA', 'P', 'RGBA'):
+                    img = img.convert('RGBA')
+                else:
+                    img = img.convert('RGB')
+
+                # Save as PNG to temp file
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.png', mode='wb') as tmp_file:
+                    img.save(tmp_file, format='PNG')
                     tmp_path = tmp_file.name
 
                 s3_uploaded = upload_to_s3(tmp_path, scan_id, 'screenshot.png')
                 os.unlink(tmp_path)
 
                 if s3_uploaded:
-                    print(f"Screenshot uploaded to S3 for scan {scan_id}")
+                    logger.info(f"Screenshot uploaded to S3 for scan {scan_id}")
             except Exception as s3_error:
-                print(f"S3 upload error (non-fatal): {s3_error}")
+                logger.warning(f"S3 upload error (non-fatal) for scan {scan_id}: {s3_error}")
 
             return screenshot_base64
 

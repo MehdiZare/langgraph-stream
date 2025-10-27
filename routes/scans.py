@@ -10,7 +10,7 @@ import logging
 from typing import Optional
 from urllib.parse import urlparse
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, Query
 from pydantic import BaseModel, Field
 
 from utils import validate_url
@@ -394,7 +394,7 @@ async def get_scan_screenshot_redirect(
     scan_id: str,
     authorization: Optional[str] = Header(None),
     session_id: Optional[str] = Header(None, alias="X-Session-ID"),
-    expiration: int = 3600
+    expiration: int = Query(3600, ge=60, le=86400)
 ):
     """
     Get screenshot for a scan via redirect to S3 presigned URL.
@@ -443,7 +443,7 @@ async def get_scan_screenshot_url(
     scan_id: str,
     authorization: Optional[str] = Header(None),
     session_id: Optional[str] = Header(None, alias="X-Session-ID"),
-    expiration: int = 3600
+    expiration: int = Query(3600, ge=60, le=86400)
 ):
     """
     Get presigned URL for screenshot download (JSON response).
@@ -456,7 +456,7 @@ async def get_scan_screenshot_url(
     - Session ID matches (anonymous)
 
     Query parameters:
-    - **expiration**: URL expiration time in seconds (default: 3600 = 1 hour)
+    - **expiration**: URL expiration time in seconds (default: 3600 = 1 hour, range: 60-86400)
     """
     supabase = get_supabase_client(use_service_role=True)
 
@@ -481,13 +481,14 @@ async def get_scan_screenshot_url(
             detail="Screenshot not found"
         )
 
-    # Calculate expiration time
-    expires_at = datetime.now(timezone.utc) + timedelta(seconds=expiration)
+    # Calculate expiration time (RFC 3339 format with Zulu time)
+    expires_dt = datetime.now(timezone.utc) + timedelta(seconds=expiration)
+    expires_at = expires_dt.isoformat().replace('+00:00', 'Z')
 
     return {
         "scan_id": scan_id,
         "screenshot_url": screenshot_url,
-        "expires_at": expires_at.isoformat() + 'Z',
+        "expires_at": expires_at,
         "expires_in_seconds": expiration
     }
 
@@ -497,7 +498,7 @@ async def get_scan_assets_endpoint(
     scan_id: str,
     authorization: Optional[str] = Header(None),
     session_id: Optional[str] = Header(None, alias="X-Session-ID"),
-    expiration: int = 3600
+    expiration: int = Query(3600, ge=60, le=86400)
 ):
     """
     Get presigned URLs for scan assets (screenshot, html, raw_data).
@@ -507,7 +508,7 @@ async def get_scan_assets_endpoint(
     - Session ID matches (anonymous)
 
     Query parameters:
-    - **expiration**: URL expiration time in seconds (default: 3600 = 1 hour)
+    - **expiration**: URL expiration time in seconds (default: 3600 = 1 hour, range: 60-86400)
     """
     supabase = get_supabase_client(use_service_role=True)
 
@@ -526,34 +527,35 @@ async def get_scan_assets_endpoint(
     # Generate presigned URLs for common assets
     assets = {}
 
+    # Calculate expiration time once (RFC 3339 format with Zulu time)
+    expires_dt = datetime.now(timezone.utc) + timedelta(seconds=expiration)
+    expires_at_str = expires_dt.isoformat().replace('+00:00', 'Z')
+
     # Screenshot
     screenshot_url = get_s3_presigned_url(scan_id, 'screenshot.png', expiration)
     if screenshot_url:
-        expires_at = datetime.now(timezone.utc) + timedelta(seconds=expiration)
         assets['screenshot'] = AssetInfo(
             url=screenshot_url,
             filename='screenshot.png',
-            expires_at=expires_at.isoformat() + 'Z'
+            expires_at=expires_at_str
         )
 
     # HTML (optional)
     html_url = get_s3_presigned_url(scan_id, 'page.html', expiration)
     if html_url:
-        expires_at = datetime.now(timezone.utc) + timedelta(seconds=expiration)
         assets['html'] = AssetInfo(
             url=html_url,
             filename='page.html',
-            expires_at=expires_at.isoformat() + 'Z'
+            expires_at=expires_at_str
         )
 
     # Raw data (optional)
     raw_data_url = get_s3_presigned_url(scan_id, 'raw_data.json', expiration)
     if raw_data_url:
-        expires_at = datetime.now(timezone.utc) + timedelta(seconds=expiration)
         assets['raw_data'] = AssetInfo(
             url=raw_data_url,
             filename='raw_data.json',
-            expires_at=expires_at.isoformat() + 'Z'
+            expires_at=expires_at_str
         )
 
     return GetAssetsResponse(

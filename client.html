@@ -789,6 +789,19 @@
         }
 
         function displayScreenshot(screenshotDataUrl, scanId) {
+            // Validate data URI format
+            if (!screenshotDataUrl || !screenshotDataUrl.startsWith('data:image/')) {
+                console.error('Invalid screenshot data URL format');
+                return;
+            }
+
+            // Validate scanId format (UUID)
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            if (!scanId || !uuidRegex.test(scanId)) {
+                console.error('Invalid scan ID format');
+                return;
+            }
+
             const chatContainer = document.getElementById('chatContainer');
 
             // Check if loading placeholder exists
