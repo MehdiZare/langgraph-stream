@@ -200,11 +200,9 @@ class ScanProcessor:
             # (Prevents race condition when using REST API + Socket.io pattern)
             await asyncio.sleep(0.5)
 
-            # Emit compressed screenshot for progressive display
-            await self.emit_screenshot(scan_id, screenshot_base64)
-
-            # Upload screenshot to S3 (non-blocking)
-            # Normalize to PNG format before upload to ensure consistent format
+            # Normalize screenshot to PNG format immediately
+            # This ensures consistent format for S3, model input, and preview
+            # (Steel.dev may return PNG, JPEG, or WEBP - we normalize to PNG)
             try:
                 screenshot_bytes = base64.b64decode(screenshot_base64)
 
@@ -218,23 +216,45 @@ class ScanProcessor:
                 else:
                     img = img.convert('RGB')
 
-                # Save as PNG to temp file
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.png', mode='wb') as tmp_file:
-                    img.save(tmp_file, format='PNG')
-                    tmp_path = tmp_file.name
+                # Encode PNG to memory (reuse for both S3 upload and return value)
+                png_io = io.BytesIO()
+                img.save(png_io, format='PNG')
+                png_bytes = png_io.getvalue()
 
-                s3_uploaded = upload_to_s3(tmp_path, scan_id, 'screenshot.png')
-                os.unlink(tmp_path)
+                # Re-encode to base64 (this is now guaranteed to be PNG format)
+                normalized_png_base64 = base64.b64encode(png_bytes).decode('utf-8')
 
-                if s3_uploaded:
-                    logger.info(f"Screenshot uploaded to S3 for scan {scan_id}")
-            except Exception as s3_error:
-                logger.warning(f"S3 upload error (non-fatal) for scan {scan_id}: {s3_error}")
+                # Emit compressed screenshot for progressive display (compresses PNG to JPEG)
+                await self.emit_screenshot(scan_id, normalized_png_base64)
 
-            return screenshot_base64
+                # Upload PNG screenshot to S3 (non-blocking)
+                try:
+                    # Save PNG bytes to temp file
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.png', mode='wb') as tmp_file:
+                        tmp_file.write(png_bytes)
+                        tmp_path = tmp_file.name
+
+                    s3_uploaded = upload_to_s3(tmp_path, scan_id, 'screenshot.png')
+                    os.unlink(tmp_path)
+
+                    if s3_uploaded:
+                        logger.info(f"Screenshot uploaded to S3 for scan {scan_id}")
+                except Exception as s3_error:
+                    logger.warning(f"S3 upload error (non-fatal) for scan {scan_id}: {s3_error}")
+
+                # Return normalized PNG base64 (not original format)
+                # This ensures all downstream code receives actual PNG data
+                return normalized_png_base64
+
+            except Exception as normalize_error:
+                logger.error(f"Failed to normalize screenshot to PNG for scan {scan_id}: {normalize_error}")
+                # If normalization fails, return original (fallback)
+                # Still emit for progressive display
+                await self.emit_screenshot(scan_id, screenshot_base64)
+                return screenshot_base64
 
         except Exception as e:
-            print(f"Error capturing screenshot: {e}")
+            logger.error(f"Error capturing screenshot for scan {scan_id}: {e}")
             return None
 
     async def _run_structured_workflow(
