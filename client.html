@@ -389,6 +389,66 @@
             color: #667eea;
             font-weight: 600;
         }
+
+        /* Screenshot Display Styles */
+        .message.screenshot {
+            background: white;
+            border: 2px solid #667eea;
+            border-radius: 12px;
+            padding: 15px;
+            max-width: 95%;
+        }
+
+        .screenshot-container {
+            position: relative;
+            margin-bottom: 10px;
+        }
+
+        .screenshot-container img {
+            width: 100%;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            display: block;
+        }
+
+        .screenshot-loading {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+            height: 300px;
+            border-radius: 8px;
+        }
+
+        @keyframes shimmer {
+            0% {
+                background-position: 200% 0;
+            }
+            100% {
+                background-position: -200% 0;
+            }
+        }
+
+        .screenshot-label {
+            font-size: 13px;
+            color: #667eea;
+            font-weight: 600;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .full-quality-link {
+            font-size: 12px;
+            color: #667eea;
+            text-decoration: none;
+            margin-top: 8px;
+            display: inline-block;
+        }
+
+        .full-quality-link:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
@@ -472,6 +532,7 @@
             // Scan events
             state.socket.on('analyze_response', handleAnalyzeResponse);
             state.socket.on('scan:progress', handleScanProgress);
+            state.socket.on('scan:screenshot', handleScanScreenshot);
             state.socket.on('scan:completed', handleScanCompleted);
             state.socket.on('scan:failed', handleScanFailed);
             state.socket.on('scan:issue', handleScanIssue);
@@ -538,6 +599,11 @@
         function handleScanProgress(data) {
             console.log('Scan progress:', data);
             updateProgressBar(data.percent, data.message);
+        }
+
+        function handleScanScreenshot(data) {
+            console.log('Screenshot received for scan:', data.scan_id);
+            displayScreenshot(data.screenshot, data.scan_id);
         }
 
         function handleScanCompleted(data) {
@@ -693,6 +759,28 @@
             chatContainer.appendChild(messageEl);
             chatContainer.scrollTop = chatContainer.scrollHeight;
             return messageEl;
+        }
+
+        function displayScreenshot(screenshotDataUrl, scanId) {
+            const chatContainer = document.getElementById('chatContainer');
+
+            const screenshotEl = document.createElement('div');
+            screenshotEl.className = 'message screenshot';
+
+            screenshotEl.innerHTML = `
+                <div class="screenshot-label">
+                    📸 Page Screenshot (Preview)
+                </div>
+                <div class="screenshot-container">
+                    <img src="${screenshotDataUrl}" alt="Website Screenshot" loading="lazy">
+                </div>
+                <a href="/api/scans/${scanId}/assets" target="_blank" class="full-quality-link">
+                    🔍 View Full Quality Screenshot
+                </a>
+            `;
+
+            chatContainer.appendChild(screenshotEl);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
         function displayStructuredAnalysis(analysis) {

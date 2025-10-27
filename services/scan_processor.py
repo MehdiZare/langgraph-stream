@@ -101,6 +101,57 @@ class ScanProcessor:
                 'issue': issue
             }, room=f'scan_{scan_id}')
 
+    async def emit_screenshot(self, scan_id: str, screenshot_base64: str):
+        """
+        Emit compressed screenshot to all clients in scan room for progressive loading.
+
+        Args:
+            scan_id: UUID of the scan
+            screenshot_base64: Base64-encoded screenshot (will be compressed)
+        """
+        if self.sio:
+            # Compress screenshot for WebSocket transmission
+            try:
+                from PIL import Image
+                import io
+
+                # Decode base64 to bytes
+                screenshot_bytes = base64.b64decode(screenshot_base64)
+
+                # Open image with PIL
+                img = Image.open(io.BytesIO(screenshot_bytes))
+
+                # Resize to max 800px width while maintaining aspect ratio
+                max_width = 800
+                if img.width > max_width:
+                    ratio = max_width / img.width
+                    new_height = int(img.height * ratio)
+                    img = img.resize((max_width, new_height), Image.Resampling.LANCZOS)
+
+                # Convert to JPEG with reduced quality for smaller size
+                output = io.BytesIO()
+                img.convert('RGB').save(output, format='JPEG', quality=65, optimize=True)
+                compressed_bytes = output.getvalue()
+
+                # Encode back to base64
+                compressed_base64 = base64.b64encode(compressed_bytes).decode('utf-8')
+
+                # Emit compressed screenshot
+                await self.sio.emit('scan:screenshot', {
+                    'scan_id': scan_id,
+                    'screenshot': f'data:image/jpeg;base64,{compressed_base64}'
+                }, room=f'scan_{scan_id}')
+
+                print(f"Emitted compressed screenshot for scan {scan_id} (original: {len(screenshot_bytes)} bytes, compressed: {len(compressed_bytes)} bytes)")
+
+            except Exception as e:
+                print(f"Error compressing screenshot: {e}")
+                # Fall back to sending original if compression fails
+                await self.sio.emit('scan:screenshot', {
+                    'scan_id': scan_id,
+                    'screenshot': f'data:image/png;base64,{screenshot_base64}'
+                }, room=f'scan_{scan_id}')
+
     async def process_scan(
         self,
         url: str,
@@ -159,6 +210,9 @@ class ScanProcessor:
                 raise Exception("Failed to capture screenshot")
 
             await self.emit_progress(scan_id, 30, "Screenshot captured successfully")
+
+            # Emit compressed screenshot for progressive display
+            await self.emit_screenshot(scan_id, screenshot_base64)
 
             # Upload screenshot to S3 (non-blocking)
             try:
