@@ -438,6 +438,60 @@ async def get_scan_screenshot_redirect(
     return RedirectResponse(url=screenshot_url, status_code=302)
 
 
+@router.get("/scans/{scan_id}/screenshot-url")
+async def get_scan_screenshot_url(
+    scan_id: str,
+    authorization: Optional[str] = Header(None),
+    session_id: Optional[str] = Header(None, alias="X-Session-ID"),
+    expiration: int = 3600
+):
+    """
+    Get presigned URL for screenshot download (JSON response).
+
+    Works for both authenticated and anonymous users.
+    Returns JSON with presigned S3 URL that can be used to download the screenshot.
+
+    Access is granted if:
+    - User owns the scan (authenticated)
+    - Session ID matches (anonymous)
+
+    Query parameters:
+    - **expiration**: URL expiration time in seconds (default: 3600 = 1 hour)
+    """
+    supabase = get_supabase_client(use_service_role=True)
+
+    # Extract user_id from auth header
+    user_id = get_user_id_from_auth_header(authorization)
+
+    # Verify access
+    has_access = await can_access_scan(supabase, scan_id, user_id, session_id)
+
+    if not has_access:
+        raise HTTPException(
+            status_code=404,
+            detail="Scan not found or access denied"
+        )
+
+    # Generate presigned URL for screenshot
+    screenshot_url = get_s3_presigned_url(scan_id, 'screenshot.png', expiration)
+
+    if not screenshot_url:
+        raise HTTPException(
+            status_code=404,
+            detail="Screenshot not found"
+        )
+
+    # Calculate expiration time
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=expiration)
+
+    return {
+        "scan_id": scan_id,
+        "screenshot_url": screenshot_url,
+        "expires_at": expires_at.isoformat() + 'Z',
+        "expires_in_seconds": expiration
+    }
+
+
 @router.get("/scans/{scan_id}/assets", response_model=GetAssetsResponse)
 async def get_scan_assets_endpoint(
     scan_id: str,
