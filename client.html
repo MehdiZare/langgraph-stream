@@ -532,6 +532,7 @@
             // Scan events
             state.socket.on('analyze_response', handleAnalyzeResponse);
             state.socket.on('scan:progress', handleScanProgress);
+            state.socket.on('scan:screenshot_loading', handleScanScreenshotLoading);
             state.socket.on('scan:screenshot', handleScanScreenshot);
             state.socket.on('scan:completed', handleScanCompleted);
             state.socket.on('scan:failed', handleScanFailed);
@@ -599,6 +600,11 @@
         function handleScanProgress(data) {
             console.log('Scan progress:', data);
             updateProgressBar(data.percent, data.message);
+        }
+
+        function handleScanScreenshotLoading(data) {
+            console.log('Screenshot loading for scan:', data.scan_id);
+            displayScreenshotLoading(data.scan_id);
         }
 
         function handleScanScreenshot(data) {
@@ -761,25 +767,67 @@
             return messageEl;
         }
 
-        function displayScreenshot(screenshotDataUrl, scanId) {
+        function displayScreenshotLoading(scanId) {
             const chatContainer = document.getElementById('chatContainer');
 
+            // Create loading placeholder
             const screenshotEl = document.createElement('div');
             screenshotEl.className = 'message screenshot';
+            screenshotEl.id = `screenshot-${scanId}`;
 
             screenshotEl.innerHTML = `
                 <div class="screenshot-label">
                     📸 Page Screenshot (Preview)
                 </div>
                 <div class="screenshot-container">
-                    <img src="${screenshotDataUrl}" alt="Website Screenshot" loading="lazy">
+                    <div class="screenshot-loading"></div>
                 </div>
-                <a href="/api/scans/${scanId}/assets" target="_blank" class="full-quality-link">
-                    🔍 View Full Quality Screenshot
-                </a>
             `;
 
             chatContainer.appendChild(screenshotEl);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function displayScreenshot(screenshotDataUrl, scanId) {
+            const chatContainer = document.getElementById('chatContainer');
+
+            // Check if loading placeholder exists
+            const existingScreenshot = document.getElementById(`screenshot-${scanId}`);
+
+            if (existingScreenshot) {
+                // Update existing placeholder with actual screenshot
+                existingScreenshot.innerHTML = `
+                    <div class="screenshot-label">
+                        📸 Page Screenshot (Preview)
+                    </div>
+                    <div class="screenshot-container">
+                        <img src="${screenshotDataUrl}" alt="Website Screenshot" loading="lazy">
+                    </div>
+                    <a href="/api/scans/${scanId}/assets" target="_blank" class="full-quality-link">
+                        🔍 View Full Quality Screenshot
+                    </a>
+                `;
+            } else {
+                // Create new screenshot element if loading wasn't shown
+                const screenshotEl = document.createElement('div');
+                screenshotEl.className = 'message screenshot';
+                screenshotEl.id = `screenshot-${scanId}`;
+
+                screenshotEl.innerHTML = `
+                    <div class="screenshot-label">
+                        📸 Page Screenshot (Preview)
+                    </div>
+                    <div class="screenshot-container">
+                        <img src="${screenshotDataUrl}" alt="Website Screenshot" loading="lazy">
+                    </div>
+                    <a href="/api/scans/${scanId}/assets" target="_blank" class="full-quality-link">
+                        🔍 View Full Quality Screenshot
+                    </a>
+                `;
+
+                chatContainer.appendChild(screenshotEl);
+            }
+
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 

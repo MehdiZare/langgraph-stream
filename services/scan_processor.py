@@ -101,6 +101,18 @@ class ScanProcessor:
                 'issue': issue
             }, room=f'scan_{scan_id}')
 
+    async def emit_screenshot_loading(self, scan_id: str):
+        """
+        Emit screenshot loading event to notify clients that screenshot capture has started.
+
+        Args:
+            scan_id: UUID of the scan
+        """
+        if self.sio:
+            await self.sio.emit('scan:screenshot_loading', {
+                'scan_id': scan_id
+            }, room=f'scan_{scan_id}')
+
     async def emit_screenshot(self, scan_id: str, screenshot_base64: str):
         """
         Emit compressed screenshot to all clients in scan room for progressive loading.
@@ -152,6 +164,130 @@ class ScanProcessor:
                     'screenshot': f'data:image/png;base64,{screenshot_base64}'
                 }, room=f'scan_{scan_id}')
 
+    async def _capture_and_emit_screenshot(
+        self,
+        scan_id: str,
+        url: str
+    ) -> Optional[str]:
+        """
+        Helper method to capture screenshot and emit events.
+
+        Args:
+            scan_id: UUID of the scan
+            url: URL to capture
+
+        Returns:
+            Base64-encoded screenshot string, or None on failure
+        """
+        try:
+            # Emit loading state
+            await self.emit_screenshot_loading(scan_id)
+            await self.emit_progress(scan_id, 15, f"Capturing screenshot of {url}...")
+
+            # Capture screenshot
+            screenshot_base64 = await capture_screenshot(url)
+
+            if not screenshot_base64:
+                raise Exception("Failed to capture screenshot")
+
+            await self.emit_progress(scan_id, 30, "Screenshot captured successfully")
+
+            # Small delay to ensure client has joined the scan room
+            # (Prevents race condition when using REST API + Socket.io pattern)
+            await asyncio.sleep(0.5)
+
+            # Emit compressed screenshot for progressive display
+            await self.emit_screenshot(scan_id, screenshot_base64)
+
+            # Upload screenshot to S3 (non-blocking)
+            try:
+                screenshot_bytes = base64.b64decode(screenshot_base64)
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp_file:
+                    tmp_file.write(screenshot_bytes)
+                    tmp_path = tmp_file.name
+
+                s3_uploaded = upload_to_s3(tmp_path, scan_id, 'screenshot.png')
+                os.unlink(tmp_path)
+
+                if s3_uploaded:
+                    print(f"Screenshot uploaded to S3 for scan {scan_id}")
+            except Exception as s3_error:
+                print(f"S3 upload error (non-fatal): {s3_error}")
+
+            return screenshot_base64
+
+        except Exception as e:
+            print(f"Error capturing screenshot: {e}")
+            return None
+
+    async def _run_structured_workflow(
+        self,
+        scan_id: str,
+        url: str,
+        screenshot_base64: str
+    ) -> dict:
+        """
+        Helper method to run structured analysis workflow.
+
+        Args:
+            scan_id: UUID of the scan
+            url: URL being analyzed
+            screenshot_base64: Base64-encoded screenshot
+
+        Returns:
+            Dictionary containing analysis and SEO results
+        """
+        # Step 1: Analyze website (30% -> 60%)
+        await self.emit_progress(scan_id, 35, "Analyzing website content...")
+
+        analysis_result = await analyze_website_node(url, screenshot_base64)
+
+        await self.emit_progress(scan_id, 60, "Website analysis complete")
+
+        # Step 2: Search competitors (60% -> 75%)
+        await self.emit_progress(scan_id, 65, "Searching Google and Bing for competitors...")
+
+        google_results, bing_results = await asyncio.gather(
+            asyncio.to_thread(search_google, analysis_result.keywords),
+            asyncio.to_thread(search_bing, analysis_result.keywords)
+        )
+
+        google_ranking = find_url_ranking(url, google_results)
+        bing_ranking = find_url_ranking(url, bing_results)
+
+        await self.emit_progress(scan_id, 75, "Competitor search complete")
+
+        # Step 3: SEO analysis (75% -> 95%)
+        await self.emit_progress(scan_id, 80, "Analyzing SEO and generating recommendations...")
+
+        seo_result = await analyze_seo_node(
+            url=url,
+            website_analysis=analysis_result,
+            google_results=google_results,
+            bing_results=bing_results,
+            google_ranking=google_ranking,
+            bing_ranking=bing_ranking
+        )
+
+        await self.emit_progress(scan_id, 95, "SEO analysis complete")
+
+        return {
+            "analysis": {
+                "website_type": analysis_result.website_type,
+                "primary_goal": analysis_result.primary_goal,
+                "description": analysis_result.description,
+                "key_features": analysis_result.key_features,
+                "keywords": analysis_result.keywords
+            },
+            "seo": {
+                "findings": seo_result.findings,
+                "recommendations": seo_result.recommendations,
+                "require_attention": seo_result.require_attention,
+                "google_ranking": google_ranking,
+                "bing_ranking": bing_ranking
+            }
+        }
+
     async def process_scan(
         self,
         url: str,
@@ -201,73 +337,21 @@ class ScanProcessor:
             await update_scan_status(self.supabase, scan_id, 'processing')
             await self.emit_progress(scan_id, 10, f"Starting scan for {url}...")
 
-            # Step 1: Capture screenshot (10% -> 30%)
-            await self.emit_progress(scan_id, 15, f"Capturing screenshot of {url}...")
-
-            screenshot_base64 = await capture_screenshot(url)
-
-            if not screenshot_base64:
-                raise Exception("Failed to capture screenshot")
-
-            await self.emit_progress(scan_id, 30, "Screenshot captured successfully")
-
-            # Small delay to ensure client has joined the scan room
-            # (Prevents race condition when using REST API + Socket.io pattern)
-            await asyncio.sleep(0.5)
-
-            # Emit compressed screenshot for progressive display
-            await self.emit_screenshot(scan_id, screenshot_base64)
-
-            # Upload screenshot to S3 (non-blocking)
-            try:
-                screenshot_bytes = base64.b64decode(screenshot_base64)
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp_file:
-                    tmp_file.write(screenshot_bytes)
-                    tmp_path = tmp_file.name
-
-                s3_uploaded = upload_to_s3(tmp_path, scan_id, 'screenshot.png')
-                os.unlink(tmp_path)
-
-                if s3_uploaded:
-                    print(f"Screenshot uploaded to S3 for scan {scan_id}")
-            except Exception as s3_error:
-                print(f"S3 upload error (non-fatal): {s3_error}")
-
-            # Step 2: Analyze website (30% -> 60%)
-            await self.emit_progress(scan_id, 35, "Analyzing website content...")
-
             if mode == "structured":
-                # Use structured output
-                analysis_result = await analyze_website_node(url, screenshot_base64)
+                # Run screenshot capture and workflow analysis in parallel
+                screenshot_task = self._capture_and_emit_screenshot(scan_id, url)
 
-                await self.emit_progress(scan_id, 60, "Website analysis complete")
+                # Wait for screenshot to complete first, then start workflow
+                # This ensures the workflow has the screenshot available
+                screenshot_base64 = await screenshot_task
 
-                # Step 3: Search competitors (60% -> 75%)
-                await self.emit_progress(scan_id, 65, "Searching Google and Bing for competitors...")
+                if not screenshot_base64:
+                    raise Exception("Failed to capture screenshot")
 
-                google_results, bing_results = await asyncio.gather(
-                    asyncio.to_thread(search_google, analysis_result.keywords),
-                    asyncio.to_thread(search_bing, analysis_result.keywords)
+                # Now run the structured workflow
+                workflow_results = await self._run_structured_workflow(
+                    scan_id, url, screenshot_base64
                 )
-
-                google_ranking = find_url_ranking(url, google_results)
-                bing_ranking = find_url_ranking(url, bing_results)
-
-                await self.emit_progress(scan_id, 75, "Competitor search complete")
-
-                # Step 4: SEO analysis (75% -> 95%)
-                await self.emit_progress(scan_id, 80, "Analyzing SEO and generating recommendations...")
-
-                seo_result = await analyze_seo_node(
-                    url=url,
-                    website_analysis=analysis_result,
-                    google_results=google_results,
-                    bing_results=bing_results,
-                    google_ranking=google_ranking,
-                    bing_ranking=bing_ranking
-                )
-
-                await self.emit_progress(scan_id, 95, "SEO analysis complete")
 
                 # Prepare scan data
                 end_time = asyncio.get_event_loop().time()
@@ -276,20 +360,8 @@ class ScanProcessor:
                 scan_data = {
                     "mode": "structured",
                     "screenshot_url": f"scans/{scan_id}/screenshot.png" if S3_BUCKET_NAME else None,
-                    "analysis": {
-                        "website_type": analysis_result.website_type,
-                        "primary_goal": analysis_result.primary_goal,
-                        "description": analysis_result.description,
-                        "key_features": analysis_result.key_features,
-                        "keywords": analysis_result.keywords
-                    },
-                    "seo": {
-                        "findings": seo_result.findings,
-                        "recommendations": seo_result.recommendations,
-                        "require_attention": seo_result.require_attention,
-                        "google_ranking": google_ranking,
-                        "bing_ranking": bing_ranking
-                    },
+                    "analysis": workflow_results["analysis"],
+                    "seo": workflow_results["seo"],
                     "s3_files": {
                         "screenshot": f"scans/{scan_id}/screenshot.png"
                     } if S3_BUCKET_NAME else None
@@ -308,7 +380,13 @@ class ScanProcessor:
                 await self.emit_completed(scan_id, scan_data)
 
             else:
-                # Streaming mode
+                # Streaming mode - capture screenshot first, then stream
+                screenshot_base64 = await self._capture_and_emit_screenshot(scan_id, url)
+
+                if not screenshot_base64:
+                    raise Exception("Failed to capture screenshot")
+
+                # Stream the analysis
                 agent = create_agent()
                 prompt_text = build_streaming_description_prompt(url)
 
