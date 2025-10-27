@@ -7,11 +7,14 @@ Extracts screenshot, analyzes content, and performs SEO analysis.
 
 import asyncio
 import base64
+import io
+import logging
 import tempfile
 import os
 import uuid
 from typing import Optional
 from urllib.parse import urlparse
+from PIL import Image
 
 from utils import validate_url
 from services.screenshot import capture_screenshot
@@ -26,6 +29,9 @@ from db import (
     upload_to_s3,
     S3_BUCKET_NAME
 )
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 
 class ScanProcessor:
