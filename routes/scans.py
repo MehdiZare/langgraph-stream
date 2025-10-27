@@ -389,6 +389,55 @@ async def claim_scans_endpoint(
         ) from e
 
 
+@router.get("/scans/{scan_id}/screenshot.png")
+async def get_scan_screenshot_redirect(
+    scan_id: str,
+    authorization: Optional[str] = Header(None),
+    session_id: Optional[str] = Header(None, alias="X-Session-ID"),
+    expiration: int = 3600
+):
+    """
+    Get screenshot for a scan via redirect to S3 presigned URL.
+
+    This endpoint allows direct image loading via <img src="/scans/{id}/screenshot.png">
+    by redirecting to a presigned S3 URL.
+
+    Access is granted if:
+    - User owns the scan (authenticated)
+    - Session ID matches (anonymous)
+
+    Query parameters:
+    - **expiration**: URL expiration time in seconds (default: 3600 = 1 hour)
+    """
+    from fastapi.responses import RedirectResponse
+
+    supabase = get_supabase_client(use_service_role=True)
+
+    # Extract user_id from auth header
+    user_id = get_user_id_from_auth_header(authorization)
+
+    # Verify access
+    has_access = await can_access_scan(supabase, scan_id, user_id, session_id)
+
+    if not has_access:
+        raise HTTPException(
+            status_code=404,
+            detail="Scan not found or access denied"
+        )
+
+    # Generate presigned URL for screenshot
+    screenshot_url = get_s3_presigned_url(scan_id, 'screenshot.png', expiration)
+
+    if not screenshot_url:
+        raise HTTPException(
+            status_code=404,
+            detail="Screenshot not found"
+        )
+
+    # Redirect to presigned S3 URL
+    return RedirectResponse(url=screenshot_url, status_code=302)
+
+
 @router.get("/scans/{scan_id}/assets", response_model=GetAssetsResponse)
 async def get_scan_assets_endpoint(
     scan_id: str,
