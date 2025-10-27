@@ -211,6 +211,10 @@ class ScanProcessor:
 
             await self.emit_progress(scan_id, 30, "Screenshot captured successfully")
 
+            # Small delay to ensure client has joined the scan room
+            # (Prevents race condition when using REST API + Socket.io pattern)
+            await asyncio.sleep(0.5)
+
             # Emit compressed screenshot for progressive display
             await self.emit_screenshot(scan_id, screenshot_base64)
 
