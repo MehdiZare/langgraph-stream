@@ -283,9 +283,30 @@ async def get_scan_endpoint(
                 detail="Authentication required. Please provide either Authorization header or X-Session-ID header."
             )
         else:
+            # Get the actual scan data to show what was expected
+            scan_data = check_response.data[0] if check_response.data else {}
+            expected_user_id = scan_data.get('user_id')
+            expected_session_id = scan_data.get('session_id')
+
+            # Build detailed error message for debugging
+            debug_info = {
+                'message': 'Access denied to this scan',
+                'expected': {
+                    'user_id': expected_user_id,
+                    'session_id': expected_session_id
+                },
+                'provided': {
+                    'user_id': user_id,
+                    'session_id': session_id
+                },
+                'hint': 'Session ID mismatch. Ensure the X-Session-ID header matches the session_id used when creating the scan.'
+            }
+
+            logger.error(f"GET /scans/{scan_id} - Session mismatch: {debug_info}")
+
             raise HTTPException(
                 status_code=403,
-                detail="Access denied to this scan"
+                detail=debug_info
             )
 
     # Format response

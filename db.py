@@ -388,10 +388,12 @@ async def can_access_scan(
 
         scan = response.data[0]
 
-        # Debug logging
+        # Debug logging with detailed comparison
         logger.info(f"can_access_scan({scan_id}) - Checking access:")
-        logger.info(f"  - Scan user_id: {scan.get('user_id')}, Scan session_id: {scan.get('session_id')}")
-        logger.info(f"  - Request user_id: {user_id}, Request session_id: {session_id}")
+        logger.info(f"  - Scan user_id: {scan.get('user_id')} (type: {type(scan.get('user_id')).__name__})")
+        logger.info(f"  - Scan session_id: {scan.get('session_id')} (type: {type(scan.get('session_id')).__name__})")
+        logger.info(f"  - Request user_id: {user_id} (type: {type(user_id).__name__})")
+        logger.info(f"  - Request session_id: {session_id} (type: {type(session_id).__name__})")
 
         # Check if user owns the scan
         if user_id and scan.get('user_id') == user_id:
@@ -399,11 +401,22 @@ async def can_access_scan(
             return True
 
         # Check if session matches for anonymous scan
-        if session_id and scan.get('session_id') == session_id:
-            logger.info(f"can_access_scan({scan_id}) - Access granted: session_id match")
-            return True
+        scan_session_id = scan.get('session_id')
+        if session_id and scan_session_id:
+            # Log detailed comparison for debugging
+            match = scan_session_id == session_id
+            logger.info(f"can_access_scan({scan_id}) - Session ID comparison:")
+            logger.info(f"  - Scan session_id:    '{scan_session_id}' (len: {len(scan_session_id) if scan_session_id else 0})")
+            logger.info(f"  - Request session_id: '{session_id}' (len: {len(session_id) if session_id else 0})")
+            logger.info(f"  - Match result: {match}")
+
+            if match:
+                logger.info(f"can_access_scan({scan_id}) - Access granted: session_id match")
+                return True
 
         logger.warning(f"can_access_scan({scan_id}) - Access denied: no match")
+        logger.warning(f"  - user_id check: provided={user_id}, scan_user_id={scan.get('user_id')}, match={user_id == scan.get('user_id') if user_id else 'N/A'}")
+        logger.warning(f"  - session_id check: provided={session_id}, scan_session_id={scan.get('session_id')}, match={session_id == scan.get('session_id') if session_id else 'N/A'}")
         return False
     except Exception as e:
         logger.error(f"Error checking scan access: {e}")
