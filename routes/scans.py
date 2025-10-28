@@ -10,7 +10,7 @@ import logging
 from typing import Optional
 from urllib.parse import urlparse
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, Query
 from pydantic import BaseModel, Field
 
 from utils import validate_url
@@ -283,9 +283,30 @@ async def get_scan_endpoint(
                 detail="Authentication required. Please provide either Authorization header or X-Session-ID header."
             )
         else:
+            # Get the actual scan data to show what was expected
+            scan_data = check_response.data[0] if check_response.data else {}
+            expected_user_id = scan_data.get('user_id')
+            expected_session_id = scan_data.get('session_id')
+
+            # Build detailed error message for debugging
+            debug_info = {
+                'message': 'Access denied to this scan',
+                'expected': {
+                    'user_id': expected_user_id,
+                    'session_id': expected_session_id
+                },
+                'provided': {
+                    'user_id': user_id,
+                    'session_id': session_id
+                },
+                'hint': 'Session ID mismatch. Ensure the X-Session-ID header matches the session_id used when creating the scan.'
+            }
+
+            logger.error(f"GET /scans/{scan_id} - Session mismatch: {debug_info}")
+
             raise HTTPException(
                 status_code=403,
-                detail="Access denied to this scan"
+                detail=debug_info
             )
 
     # Format response
@@ -389,12 +410,116 @@ async def claim_scans_endpoint(
         ) from e
 
 
+@router.get("/scans/{scan_id}/screenshot.png")
+async def get_scan_screenshot_redirect(
+    scan_id: str,
+    authorization: Optional[str] = Header(None),
+    session_id: Optional[str] = Header(None, alias="X-Session-ID"),
+    expiration: int = Query(3600, ge=60, le=86400)
+):
+    """
+    Get screenshot for a scan via redirect to S3 presigned URL.
+
+    This endpoint allows direct image loading via <img src="/scans/{id}/screenshot.png">
+    by redirecting to a presigned S3 URL.
+
+    Access is granted if:
+    - User owns the scan (authenticated)
+    - Session ID matches (anonymous)
+
+    Query parameters:
+    - **expiration**: URL expiration time in seconds (default: 3600 = 1 hour)
+    """
+    from fastapi.responses import RedirectResponse
+
+    supabase = get_supabase_client(use_service_role=True)
+
+    # Extract user_id from auth header
+    user_id = get_user_id_from_auth_header(authorization)
+
+    # Verify access
+    has_access = await can_access_scan(supabase, scan_id, user_id, session_id)
+
+    if not has_access:
+        raise HTTPException(
+            status_code=404,
+            detail="Scan not found or access denied"
+        )
+
+    # Generate presigned URL for screenshot
+    screenshot_url = get_s3_presigned_url(scan_id, 'screenshot.png', expiration)
+
+    if not screenshot_url:
+        raise HTTPException(
+            status_code=404,
+            detail="Screenshot not found"
+        )
+
+    # Redirect to presigned S3 URL
+    return RedirectResponse(url=screenshot_url, status_code=302)
+
+
+@router.get("/scans/{scan_id}/screenshot-url")
+async def get_scan_screenshot_url(
+    scan_id: str,
+    authorization: Optional[str] = Header(None),
+    session_id: Optional[str] = Header(None, alias="X-Session-ID"),
+    expiration: int = Query(3600, ge=60, le=86400)
+):
+    """
+    Get presigned URL for screenshot download (JSON response).
+
+    Works for both authenticated and anonymous users.
+    Returns JSON with presigned S3 URL that can be used to download the screenshot.
+
+    Access is granted if:
+    - User owns the scan (authenticated)
+    - Session ID matches (anonymous)
+
+    Query parameters:
+    - **expiration**: URL expiration time in seconds (default: 3600 = 1 hour, range: 60-86400)
+    """
+    supabase = get_supabase_client(use_service_role=True)
+
+    # Extract user_id from auth header
+    user_id = get_user_id_from_auth_header(authorization)
+
+    # Verify access
+    has_access = await can_access_scan(supabase, scan_id, user_id, session_id)
+
+    if not has_access:
+        raise HTTPException(
+            status_code=404,
+            detail="Scan not found or access denied"
+        )
+
+    # Generate presigned URL for screenshot
+    screenshot_url = get_s3_presigned_url(scan_id, 'screenshot.png', expiration)
+
+    if not screenshot_url:
+        raise HTTPException(
+            status_code=404,
+            detail="Screenshot not found"
+        )
+
+    # Calculate expiration time (RFC 3339 format with Zulu time)
+    expires_dt = datetime.now(timezone.utc) + timedelta(seconds=expiration)
+    expires_at = expires_dt.isoformat().replace('+00:00', 'Z')
+
+    return {
+        "scan_id": scan_id,
+        "screenshot_url": screenshot_url,
+        "expires_at": expires_at,
+        "expires_in_seconds": expiration
+    }
+
+
 @router.get("/scans/{scan_id}/assets", response_model=GetAssetsResponse)
 async def get_scan_assets_endpoint(
     scan_id: str,
     authorization: Optional[str] = Header(None),
     session_id: Optional[str] = Header(None, alias="X-Session-ID"),
-    expiration: int = 3600
+    expiration: int = Query(3600, ge=60, le=86400)
 ):
     """
     Get presigned URLs for scan assets (screenshot, html, raw_data).
@@ -404,7 +529,7 @@ async def get_scan_assets_endpoint(
     - Session ID matches (anonymous)
 
     Query parameters:
-    - **expiration**: URL expiration time in seconds (default: 3600 = 1 hour)
+    - **expiration**: URL expiration time in seconds (default: 3600 = 1 hour, range: 60-86400)
     """
     supabase = get_supabase_client(use_service_role=True)
 
@@ -423,34 +548,35 @@ async def get_scan_assets_endpoint(
     # Generate presigned URLs for common assets
     assets = {}
 
+    # Calculate expiration time once (RFC 3339 format with Zulu time)
+    expires_dt = datetime.now(timezone.utc) + timedelta(seconds=expiration)
+    expires_at_str = expires_dt.isoformat().replace('+00:00', 'Z')
+
     # Screenshot
     screenshot_url = get_s3_presigned_url(scan_id, 'screenshot.png', expiration)
     if screenshot_url:
-        expires_at = datetime.now(timezone.utc) + timedelta(seconds=expiration)
         assets['screenshot'] = AssetInfo(
             url=screenshot_url,
             filename='screenshot.png',
-            expires_at=expires_at.isoformat() + 'Z'
+            expires_at=expires_at_str
         )
 
     # HTML (optional)
     html_url = get_s3_presigned_url(scan_id, 'page.html', expiration)
     if html_url:
-        expires_at = datetime.now(timezone.utc) + timedelta(seconds=expiration)
         assets['html'] = AssetInfo(
             url=html_url,
             filename='page.html',
-            expires_at=expires_at.isoformat() + 'Z'
+            expires_at=expires_at_str
         )
 
     # Raw data (optional)
     raw_data_url = get_s3_presigned_url(scan_id, 'raw_data.json', expiration)
     if raw_data_url:
-        expires_at = datetime.now(timezone.utc) + timedelta(seconds=expiration)
         assets['raw_data'] = AssetInfo(
             url=raw_data_url,
             filename='raw_data.json',
-            expires_at=expires_at.isoformat() + 'Z'
+            expires_at=expires_at_str
         )
 
     return GetAssetsResponse(

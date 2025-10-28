@@ -6,7 +6,7 @@
     <title>Website Scanner - Socket.io</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js"></script>
-    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -389,6 +389,66 @@
             color: #667eea;
             font-weight: 600;
         }
+
+        /* Screenshot Display Styles */
+        .message.screenshot {
+            background: white;
+            border: 2px solid #667eea;
+            border-radius: 12px;
+            padding: 15px;
+            max-width: 95%;
+        }
+
+        .screenshot-container {
+            position: relative;
+            margin-bottom: 10px;
+        }
+
+        .screenshot-container img {
+            width: 100%;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            display: block;
+        }
+
+        .screenshot-loading {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+            height: 300px;
+            border-radius: 8px;
+        }
+
+        @keyframes shimmer {
+            0% {
+                background-position: 200% 0;
+            }
+            100% {
+                background-position: -200% 0;
+            }
+        }
+
+        .screenshot-label {
+            font-size: 13px;
+            color: #667eea;
+            font-weight: 600;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .full-quality-link {
+            font-size: 12px;
+            color: #667eea;
+            text-decoration: none;
+            margin-top: 8px;
+            display: inline-block;
+        }
+
+        .full-quality-link:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
@@ -472,6 +532,8 @@
             // Scan events
             state.socket.on('analyze_response', handleAnalyzeResponse);
             state.socket.on('scan:progress', handleScanProgress);
+            state.socket.on('scan:screenshot_loading', handleScanScreenshotLoading);
+            state.socket.on('scan:screenshot', handleScanScreenshot);
             state.socket.on('scan:completed', handleScanCompleted);
             state.socket.on('scan:failed', handleScanFailed);
             state.socket.on('scan:issue', handleScanIssue);
@@ -538,6 +600,16 @@
         function handleScanProgress(data) {
             console.log('Scan progress:', data);
             updateProgressBar(data.percent, data.message);
+        }
+
+        function handleScanScreenshotLoading(data) {
+            console.log('Screenshot loading for scan:', data.scan_id);
+            displayScreenshotLoading(data.scan_id);
+        }
+
+        function handleScanScreenshot(data) {
+            console.log('Screenshot received for scan:', data.scan_id);
+            displayScreenshot(data.screenshot, data.scan_id);
         }
 
         function handleScanCompleted(data) {
@@ -695,6 +767,83 @@
             return messageEl;
         }
 
+        function displayScreenshotLoading(scanId) {
+            const chatContainer = document.getElementById('chatContainer');
+
+            // Create loading placeholder
+            const screenshotEl = document.createElement('div');
+            screenshotEl.className = 'message screenshot';
+            screenshotEl.id = `screenshot-${scanId}`;
+
+            screenshotEl.innerHTML = `
+                <div class="screenshot-label">
+                    📸 Page Screenshot (Preview)
+                </div>
+                <div class="screenshot-container">
+                    <div class="screenshot-loading"></div>
+                </div>
+            `;
+
+            chatContainer.appendChild(screenshotEl);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function displayScreenshot(screenshotDataUrl, scanId) {
+            // Validate data URI format
+            if (!screenshotDataUrl || !screenshotDataUrl.startsWith('data:image/')) {
+                console.error('Invalid screenshot data URL format');
+                return;
+            }
+
+            // Validate scanId format (UUID)
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            if (!scanId || !uuidRegex.test(scanId)) {
+                console.error('Invalid scan ID format');
+                return;
+            }
+
+            const chatContainer = document.getElementById('chatContainer');
+
+            // Check if loading placeholder exists
+            const existingScreenshot = document.getElementById(`screenshot-${scanId}`);
+
+            if (existingScreenshot) {
+                // Update existing placeholder with actual screenshot
+                existingScreenshot.innerHTML = `
+                    <div class="screenshot-label">
+                        📸 Page Screenshot (Preview)
+                    </div>
+                    <div class="screenshot-container">
+                        <img src="${screenshotDataUrl}" alt="Website Screenshot" loading="lazy">
+                    </div>
+                    <a href="javascript:void(0)" onclick="fetchAndOpenScreenshot('${scanId}')" class="full-quality-link">
+                        🔍 View Full Quality Screenshot
+                    </a>
+                `;
+            } else {
+                // Create new screenshot element if loading wasn't shown
+                const screenshotEl = document.createElement('div');
+                screenshotEl.className = 'message screenshot';
+                screenshotEl.id = `screenshot-${scanId}`;
+
+                screenshotEl.innerHTML = `
+                    <div class="screenshot-label">
+                        📸 Page Screenshot (Preview)
+                    </div>
+                    <div class="screenshot-container">
+                        <img src="${screenshotDataUrl}" alt="Website Screenshot" loading="lazy">
+                    </div>
+                    <a href="javascript:void(0)" onclick="fetchAndOpenScreenshot('${scanId}')" class="full-quality-link">
+                        🔍 View Full Quality Screenshot
+                    </a>
+                `;
+
+                chatContainer.appendChild(screenshotEl);
+            }
+
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
         function displayStructuredAnalysis(analysis) {
             const chatContainer = document.getElementById('chatContainer');
 
@@ -782,6 +931,39 @@
 
         function clearChat() {
             document.getElementById('chatContainer').innerHTML = '';
+        }
+
+        async function fetchAndOpenScreenshot(scanId) {
+            try {
+                const headers = { 'Content-Type': 'application/json' };
+
+                // Add session_id for anonymous users
+                if (state.sessionId) {
+                    headers['X-Session-ID'] = state.sessionId;
+                }
+
+                const response = await fetch(`/api/scans/${scanId}/screenshot-url`, {
+                    headers: headers
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.detail || `HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                // Open presigned URL in new tab
+                if (data.screenshot_url) {
+                    window.open(data.screenshot_url, '_blank');
+                } else {
+                    throw new Error('Screenshot URL not found in response');
+                }
+
+            } catch (error) {
+                console.error('Error fetching screenshot:', error);
+                addMessage('error', `Failed to load full quality screenshot: ${error.message}`);
+            }
         }
 
         // User action handlers
