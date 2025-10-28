@@ -165,13 +165,36 @@ async def capture_screenshot(url: str, websocket: WebSocket = None) -> str:
         return screenshot_base64
 
     except Exception as e:
-        # Provide helpful error message
-        error_detail = str(e)
-        if '500' in error_detail or 'Internal Server Error' in error_detail:
+        # Provide helpful error message based on error type
+        error_detail = str(e).lower()
+
+        # DNS resolution failures - website doesn't exist
+        if any(x in error_detail for x in ['nxdomain', 'name or service not known', 'getaddrinfo failed',
+                                             'nodename nor servname provided', 'name resolution failed',
+                                             'no address associated with hostname']):
+            raise Exception("Website not found. Please check that the URL is correct and the domain exists.")
+
+        # Connection timeouts - website is too slow or unreachable
+        elif any(x in error_detail for x in ['timeout', 'timed out', 'read timeout', 'connect timeout']):
+            raise Exception("Connection timeout. The website took too long to respond. Please try again or check if the website is accessible.")
+
+        # Connection refused or unreachable - server is down or blocking
+        elif any(x in error_detail for x in ['connection refused', 'network unreachable', 'no route to host',
+                                               'connection reset', 'connection aborted']):
+            raise Exception("Cannot connect to website. The server may be down or blocking connections.")
+
+        # SSL/TLS certificate errors - security issues
+        elif any(x in error_detail for x in ['ssl', 'certificate', 'handshake', 'tls']):
+            raise Exception("Security certificate error. The website's SSL/TLS certificate may be invalid or expired.")
+
+        # Steel.dev service errors (existing logic)
+        elif '500' in error_detail or 'internal server error' in error_detail:
             raise Exception("Steel.dev service is temporarily unavailable. Please try again in a moment.")
         elif '401' in error_detail or '403' in error_detail:
             raise Exception("Steel.dev API authentication failed. Please check your API key.")
         elif '429' in error_detail:
             raise Exception("Steel.dev rate limit exceeded. Please wait a moment before trying again.")
+
+        # Generic fallback - show original error for debugging
         else:
-            raise Exception(f"Failed to capture screenshot: {error_detail}")
+            raise Exception(f"Failed to capture screenshot: {str(e)}")

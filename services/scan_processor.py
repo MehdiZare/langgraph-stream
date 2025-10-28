@@ -85,18 +85,60 @@ class ScanProcessor:
                 'results': results
             }, room=f'scan_{scan_id}')
 
-    async def emit_failed(self, scan_id: str, error: str):
+    def _classify_error(self, error_message: str) -> str:
+        """
+        Classify error type based on error message for frontend handling.
+
+        Args:
+            error_message: Error message string
+
+        Returns:
+            Error type string (dns_error, timeout_error, connection_error, ssl_error, service_error, unknown_error)
+        """
+        error_lower = error_message.lower()
+
+        # DNS resolution failures
+        if 'website not found' in error_lower or 'domain exists' in error_lower:
+            return 'dns_error'
+
+        # Connection timeouts
+        elif 'timeout' in error_lower:
+            return 'timeout_error'
+
+        # Connection refused/unreachable
+        elif 'cannot connect' in error_lower or 'server may be down' in error_lower:
+            return 'connection_error'
+
+        # SSL/TLS errors
+        elif 'certificate' in error_lower or 'ssl' in error_lower:
+            return 'ssl_error'
+
+        # Steel.dev service errors
+        elif 'steel.dev' in error_lower or 'rate limit' in error_lower or 'authentication failed' in error_lower:
+            return 'service_error'
+
+        # Generic fallback
+        else:
+            return 'unknown_error'
+
+    async def emit_failed(self, scan_id: str, error: str, error_type: str = None):
         """
         Emit failure event to all clients in scan room.
 
         Args:
             scan_id: UUID of the scan
             error: Error message
+            error_type: Type of error (optional, will be auto-classified if not provided)
         """
+        # Auto-classify error type if not provided
+        if error_type is None:
+            error_type = self._classify_error(error)
+
         if self.sio:
             await self.sio.emit('scan:failed', {
                 'scan_id': scan_id,
-                'error': error
+                'error': error,
+                'error_type': error_type
             }, room=f'scan_{scan_id}')
 
     async def emit_issue(self, scan_id: str, issue: dict):

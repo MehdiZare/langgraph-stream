@@ -907,14 +907,7 @@
                 reconnection: true,
                 reconnectionDelay: 3000,
                 reconnectionAttempts: Infinity,
-                withCredentials: CONFIG.USE_COOKIES,
-                // Auth callback - called on connect and reconnect
-                auth: async (cb) => {
-                    const token = await getClerkToken();
-                    const sessionId = state.sessionId || getOrCreateSessionId();
-                    console.log('Socket.IO auth callback - token:', !!token, 'sessionId:', sessionId);
-                    cb({ token, session_id: sessionId });
-                }
+                withCredentials: CONFIG.USE_COOKIES
             });
 
             // Connection events
@@ -946,15 +939,22 @@
         // CONNECTION HANDLERS
         // ============================================================
 
-        function handleConnect() {
+        async function handleConnect() {
             console.log('Socket.io connected');
             state.isConnected = true;
 
-            // Update status based on auth state
-            const statusText = state.isAuthenticated
-                ? '✓ Connected (authenticated)'
-                : '✓ Connected (anonymous)';
-            updateStatus('connected', statusText);
+            // Send authentication data to server
+            const token = await getClerkToken();
+            const sessionId = state.sessionId || getOrCreateSessionId();
+
+            console.log('Emitting auth event - token:', !!token, 'sessionId:', sessionId);
+            state.socket.emit('auth', {
+                token: token,
+                session_id: sessionId
+            });
+
+            // Status will be updated after receiving auth_response
+            updateStatus('connected', '⟳ Authenticating...');
         }
 
         function handleDisconnect() {
