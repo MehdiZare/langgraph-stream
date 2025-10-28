@@ -4,6 +4,12 @@ FROM python:3.11-slim as builder
 # Set working directory
 WORKDIR /app
 
+# Install system dependencies for Pillow (image processing)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libjpeg-dev \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install uv for faster dependency installation
 RUN pip install --no-cache-dir uv
 
@@ -18,6 +24,12 @@ FROM python:3.11-slim
 
 # Set working directory
 WORKDIR /app
+
+# Install runtime libraries for Pillow
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libjpeg62-turbo \
+    zlib1g \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && \
