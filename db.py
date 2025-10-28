@@ -57,21 +57,22 @@ def get_s3_client():
     """
     Get boto3 S3 client instance.
 
+    In ECS/production, credentials are automatically provided via the task IAM role.
+    For local development, credentials are resolved via boto3's default credential chain:
+    - Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
+    - AWS credentials file (~/.aws/credentials)
+    - IAM instance profile (if running on EC2)
+
     Returns:
         boto3 S3 client
     """
-    if not all([AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_BUCKET_NAME]):
+    if not S3_BUCKET_NAME:
         raise ValueError(
-            "AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and S3_BUCKET_NAME "
-            "environment variables must be set"
+            "S3_BUCKET_NAME environment variable must be set"
         )
 
-    return boto3.client(
-        's3',
-        aws_access_key_id=AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-        region_name=AWS_REGION
-    )
+    # Use boto3's default credential chain (includes ECS task role)
+    return boto3.client('s3', region_name=AWS_REGION)
 
 
 def get_scan_s3_path(scan_id: str, filename: str) -> str:
