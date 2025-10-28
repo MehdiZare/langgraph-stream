@@ -7,6 +7,8 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js"></script>
     <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+    <!-- Clerk JavaScript SDK -->
+    <script async crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js"></script>
     <style>
         * {
             margin: 0;
@@ -449,12 +451,164 @@
         .full-quality-link:hover {
             text-decoration: underline;
         }
+
+        /* Authentication UI Styles */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .header-left {
+            flex: 1;
+        }
+
+        .auth-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .auth-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            display: inline-block;
+        }
+
+        .auth-badge.anonymous {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        .auth-badge.authenticated {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .user-info {
+            font-size: 13px;
+            color: #666;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-auth {
+            padding: 8px 16px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-auth:hover {
+            background: #5568d3;
+            transform: translateY(-1px);
+        }
+
+        .btn-auth.secondary {
+            background: #f0f0f0;
+            color: #333;
+            border: 1px solid #d0d0d0;
+        }
+
+        .btn-auth.secondary:hover {
+            background: #e0e0e0;
+        }
+
+        /* Error Banner Styles */
+        .error-banner {
+            display: none;
+            padding: 15px 20px;
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            position: relative;
+        }
+
+        .error-banner.visible {
+            display: block;
+        }
+
+        .error-banner-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .error-banner-text {
+            flex: 1;
+        }
+
+        .error-banner-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-close {
+            background: transparent;
+            border: none;
+            color: #721c24;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 0 5px;
+        }
+
+        .btn-retry {
+            padding: 6px 12px;
+            background: #721c24;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .btn-retry:hover {
+            background: #5a161c;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Website Scanner (Socket.io)</h1>
-        <p class="subtitle">AI-powered website analysis with real-time updates</p>
+        <!-- Header with Auth Controls -->
+        <div class="header">
+            <div class="header-left">
+                <h1>Website Scanner (Socket.io)</h1>
+                <p class="subtitle">AI-powered website analysis with real-time updates</p>
+            </div>
+            <div class="auth-controls">
+                <div id="authStatus" class="auth-badge anonymous">Anonymous</div>
+                <div id="userInfo" class="user-info" style="display: none;"></div>
+                <button id="signInBtn" class="btn-auth" onclick="handleSignIn()" style="display: none;">Sign In</button>
+                <button id="signOutBtn" class="btn-auth secondary" onclick="handleSignOut()" style="display: none;">Sign Out</button>
+            </div>
+        </div>
+
+        <!-- Error Banner -->
+        <div id="errorBanner" class="error-banner">
+            <div class="error-banner-content">
+                <div class="error-banner-text" id="errorBannerText"></div>
+                <div class="error-banner-actions">
+                    <button id="retryBtn" class="btn-retry" onclick="retryLastAction()" style="display: none;">Retry</button>
+                    <button class="btn-close" onclick="dismissErrorBanner()">×</button>
+                </div>
+            </div>
+        </div>
 
         <div id="status" class="status connecting">
             Connecting to server...
@@ -502,23 +656,138 @@
     </div>
 
     <script>
-        // State management
+        // ============================================================
+        // CONFIGURATION
+        // ============================================================
+        const CONFIG = {
+            // API Configuration - can be overridden via window.APP_* globals
+            API_BASE_URL: window.APP_API_BASE_URL || (window.location.origin + '/api'),
+            SOCKET_URL: window.APP_SOCKET_URL || window.location.origin,
+            SOCKET_PATH: window.APP_SOCKET_PATH || '/socket.io',
+
+            // Clerk Configuration
+            CLERK_PUBLISHABLE_KEY: window.APP_CLERK_PUBLISHABLE_KEY || '', // Set this via environment or window global
+
+            // Auth options
+            USE_COOKIES: false // Set true if backend uses cookie-based auth
+        };
+
+        console.log('Configured API Base URL:', CONFIG.API_BASE_URL);
+        console.log('Configured Socket URL:', CONFIG.SOCKET_URL);
+
+        // ============================================================
+        // STATE MANAGEMENT
+        // ============================================================
         const state = {
             socket: null,
             sessionId: null,
             currentScanId: null,
             isAuthenticated: false,
-            isConnected: false
+            isConnected: false,
+            clerk: null,
+            user: null,
+            lastFailedAction: null // For retry functionality
         };
 
-        // Initialize Socket.io connection
+        // ============================================================
+        // UTILITY FUNCTIONS
+        // ============================================================
+
+        /**
+         * Get or create session ID for anonymous users
+         */
+        function getOrCreateSessionId() {
+            const SESSION_KEY = 'session_id';
+            let sessionId = localStorage.getItem(SESSION_KEY);
+
+            if (!sessionId) {
+                sessionId = crypto.randomUUID();
+                localStorage.setItem(SESSION_KEY, sessionId);
+                console.log('Generated new session ID:', sessionId);
+            }
+
+            return sessionId;
+        }
+
+        /**
+         * Get Clerk authentication token
+         */
+        async function getClerkToken() {
+            if (!state.clerk || !state.isAuthenticated) {
+                return null;
+            }
+
+            try {
+                // Get token with supabase template as backend expects
+                const token = await state.clerk.session.getToken({ template: 'supabase' });
+                return token;
+            } catch (error) {
+                console.error('Error getting Clerk token:', error);
+                return null;
+            }
+        }
+
+        /**
+         * Build headers for API requests with authentication
+         */
+        async function buildHeaders(includeContentType = true) {
+            const headers = {};
+
+            if (includeContentType) {
+                headers['Content-Type'] = 'application/json';
+            }
+
+            // Authenticated user - add Bearer token
+            if (state.isAuthenticated && state.clerk) {
+                const token = await getClerkToken();
+                if (token) {
+                    headers['Authorization'] = `Bearer ${token}`;
+                }
+            }
+
+            // Add session ID (for anonymous or for claiming scans)
+            if (state.sessionId) {
+                headers['X-Session-ID'] = state.sessionId;
+            }
+
+            return headers;
+        }
+
+        /**
+         * Validate URL format
+         */
+        function isValidUrl(str) {
+            try {
+                const url = new URL(str);
+                return ['http:', 'https:'].includes(url.protocol);
+            } catch {
+                return false;
+            }
+        }
+
+        // ============================================================
+        // SOCKET.IO INITIALIZATION
+        // ============================================================
+
+        /**
+         * Initialize Socket.io connection with auth support
+         */
         function initializeSocket() {
             console.log('Initializing Socket.io connection...');
 
-            state.socket = io({
+            state.socket = io(CONFIG.SOCKET_URL, {
+                path: CONFIG.SOCKET_PATH,
                 reconnection: true,
                 reconnectionDelay: 3000,
-                reconnectionAttempts: Infinity
+                reconnectionAttempts: Infinity,
+                withCredentials: CONFIG.USE_COOKIES,
+                // Auth callback - called on connect and reconnect
+                auth: async (cb) => {
+                    const token = await getClerkToken();
+                    const sessionId = state.sessionId || getOrCreateSessionId();
+                    console.log('Socket.IO auth callback - token:', !!token, 'sessionId:', sessionId);
+                    cb({ token, session_id: sessionId });
+                }
             });
 
             // Connection events
@@ -546,20 +815,19 @@
             state.socket.on('error', handleError);
         }
 
-        // Connection handlers
+        // ============================================================
+        // CONNECTION HANDLERS
+        // ============================================================
+
         function handleConnect() {
             console.log('Socket.io connected');
             state.isConnected = true;
-            updateStatus('connected', '✓ Connected to server');
 
-            // Get session_id from localStorage
-            const sessionId = localStorage.getItem('session_id');
-
-            // Send auth (anonymous - no login required)
-            state.socket.emit('auth', {
-                token: null,
-                session_id: sessionId
-            });
+            // Update status based on auth state
+            const statusText = state.isAuthenticated
+                ? '✓ Connected (authenticated)'
+                : '✓ Connected (anonymous)';
+            updateStatus('connected', statusText);
         }
 
         function handleDisconnect() {
@@ -572,21 +840,36 @@
         function handleConnectError(error) {
             console.error('Socket.io connection error:', error);
             updateStatus('disconnected', '✗ Connection error');
-            addMessage('error', `Connection error: ${error.message || 'Unknown error'}`);
+            showErrorBanner(`Connection error: ${error.message || 'Unknown error'}`);
         }
 
-        // Auth handlers
+        // ============================================================
+        // AUTH HANDLERS
+        // ============================================================
+
         function handleAuthResponse(data) {
             console.log('Auth response:', data);
 
-            if (!data.authenticated && data.session_id) {
+            // Update session ID if provided (anonymous users)
+            if (data.session_id) {
                 state.sessionId = data.session_id;
                 localStorage.setItem('session_id', data.session_id);
-                console.log('Anonymous session created:', data.session_id);
             }
 
-            // Enable UI
+            // Update authenticated state
+            state.isAuthenticated = data.authenticated || false;
+
+            // Update UI
+            updateAuthUI();
+
+            // Enable send button
             document.getElementById('sendBtn').disabled = false;
+
+            // Update connection status
+            const statusText = state.isAuthenticated
+                ? '✓ Connected (authenticated)'
+                : '✓ Connected (anonymous)';
+            updateStatus('connected', statusText);
         }
 
         // Scan event handlers
@@ -658,32 +941,31 @@
             addMessage('error', data.message || 'An error occurred');
         }
 
-        // REST API scan creation
+        // ============================================================
+        // REST API FUNCTIONS
+        // ============================================================
+
+        /**
+         * Create scan via REST API (recommended method)
+         */
         async function createScanViaAPI(url) {
             try {
                 updateStatus('processing', '⏳ Creating scan...');
 
-                const headers = {
-                    'Content-Type': 'application/json'
-                };
+                // Build headers with authentication
+                const headers = await buildHeaders();
 
-                // Include session_id if available (for anonymous users)
-                if (state.sessionId) {
-                    headers['X-Session-ID'] = state.sessionId;
-                    console.log('Sending X-Session-ID header:', state.sessionId);
-                } else {
-                    console.warn('No session_id available - scan may not be accessible later');
-                }
-
-                const response = await fetch('/api/scans', {
+                const response = await fetch(`${CONFIG.API_BASE_URL}/scans`, {
                     method: 'POST',
                     headers: headers,
+                    credentials: CONFIG.USE_COOKIES ? 'include' : 'same-origin',
                     body: JSON.stringify({ url: url })
                 });
 
                 if (!response.ok) {
                     const errorData = await response.json().catch(() => ({}));
-                    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`);
+                    const errorMsg = errorData.detail || `HTTP ${response.status}: ${response.statusText}`;
+                    throw new Error(errorMsg);
                 }
 
                 const data = await response.json();
@@ -706,7 +988,7 @@
                 return data;
             } catch (error) {
                 console.error('Error creating scan:', error);
-                addMessage('error', `Failed to create scan: ${error.message}`);
+                showErrorBanner(`Failed to create scan: ${error.message}`, () => createScanViaAPI(url));
                 updateStatus('connected', '✓ Connected to server');
                 throw error;
             }
@@ -933,48 +1215,74 @@
             document.getElementById('chatContainer').innerHTML = '';
         }
 
+        /**
+         * Fetch and open full quality screenshot
+         */
         async function fetchAndOpenScreenshot(scanId) {
             try {
-                const headers = { 'Content-Type': 'application/json' };
+                // Build headers with authentication
+                const headers = await buildHeaders(false); // Don't include Content-Type for GET
 
-                // Add session_id for anonymous users
-                if (state.sessionId) {
-                    headers['X-Session-ID'] = state.sessionId;
-                }
-
-                const response = await fetch(`/api/scans/${scanId}/screenshot-url`, {
-                    headers: headers
+                const response = await fetch(`${CONFIG.API_BASE_URL}/scans/${scanId}/screenshot-url`, {
+                    method: 'GET',
+                    headers: headers,
+                    credentials: CONFIG.USE_COOKIES ? 'include' : 'same-origin'
                 });
 
                 if (!response.ok) {
                     const errorData = await response.json().catch(() => ({}));
-                    throw new Error(errorData.detail || `HTTP ${response.status}`);
+                    const errorMsg = errorData.detail || `HTTP ${response.status} ${response.statusText}`;
+                    throw new Error(errorMsg);
                 }
 
                 const data = await response.json();
 
-                // Open presigned URL in new tab
-                if (data.screenshot_url) {
-                    window.open(data.screenshot_url, '_blank');
-                } else {
-                    throw new Error('Screenshot URL not found in response');
+                // Validate screenshot URL
+                if (!data.screenshot_url) {
+                    throw new Error('No screenshot_url in response');
                 }
+
+                // Validate the URL format
+                try {
+                    new URL(data.screenshot_url);
+                } catch {
+                    throw new Error('Invalid screenshot URL format');
+                }
+
+                // Open in new tab
+                window.open(data.screenshot_url, '_blank', 'noopener');
+
+                console.log('Screenshot opened successfully');
 
             } catch (error) {
                 console.error('Error fetching screenshot:', error);
-                addMessage('error', `Failed to load full quality screenshot: ${error.message}`);
+                const errorMsg = `Failed to load full quality screenshot: ${error.message}`;
+                showErrorBanner(errorMsg, () => fetchAndOpenScreenshot(scanId));
+                addMessage('error', errorMsg);
             }
         }
 
-        // User action handlers
+        // ============================================================
+        // USER ACTION HANDLERS
+        // ============================================================
+
+        /**
+         * Send URL for scanning
+         */
         async function sendMessage() {
             const input = document.getElementById('urlInput');
             const url = input.value.trim();
 
             if (!url) return;
 
+            // Validate URL format
+            if (!isValidUrl(url)) {
+                showErrorBanner('Please enter a valid http(s) URL');
+                return;
+            }
+
             if (!state.socket || !state.socket.connected) {
-                addMessage('error', '✗ Not connected to server');
+                showErrorBanner('Not connected to server. Please wait for connection.');
                 return;
             }
 
@@ -1027,9 +1335,246 @@
             }
         }
 
-        // Initialize on page load
-        document.addEventListener('DOMContentLoaded', () => {
-            console.log('Page loaded, initializing Socket.io...');
+        // ============================================================
+        // CLERK AUTHENTICATION FUNCTIONS
+        // ============================================================
+
+        /**
+         * Initialize Clerk authentication
+         */
+        async function initializeClerk() {
+            if (!CONFIG.CLERK_PUBLISHABLE_KEY) {
+                console.warn('Clerk publishable key not configured. Authentication disabled.');
+                updateAuthUI(); // Update UI to show anonymous state
+                return;
+            }
+
+            try {
+                console.log('Initializing Clerk...');
+
+                // Wait for Clerk to be available
+                if (typeof Clerk === 'undefined') {
+                    console.warn('Clerk SDK not loaded. Authentication disabled.');
+                    return;
+                }
+
+                // Initialize Clerk
+                state.clerk = new Clerk(CONFIG.CLERK_PUBLISHABLE_KEY);
+                await state.clerk.load();
+
+                console.log('Clerk initialized successfully');
+
+                // Check if user is already signed in
+                if (state.clerk.user) {
+                    state.user = state.clerk.user;
+                    state.isAuthenticated = true;
+                    console.log('User already signed in:', state.user.id);
+
+                    // Claim anonymous scans
+                    await claimAnonymousScans();
+                }
+
+                // Update UI
+                updateAuthUI();
+
+                // Listen for auth changes
+                state.clerk.addListener((event) => {
+                    console.log('Clerk auth event:', event);
+                    if (event.user) {
+                        state.user = event.user;
+                        state.isAuthenticated = true;
+                    } else {
+                        state.user = null;
+                        state.isAuthenticated = false;
+                    }
+                    updateAuthUI();
+                });
+
+            } catch (error) {
+                console.error('Error initializing Clerk:', error);
+                showErrorBanner('Failed to initialize authentication. Continuing in anonymous mode.');
+            }
+        }
+
+        /**
+         * Update authentication UI based on current state
+         */
+        function updateAuthUI() {
+            const authStatus = document.getElementById('authStatus');
+            const userInfo = document.getElementById('userInfo');
+            const signInBtn = document.getElementById('signInBtn');
+            const signOutBtn = document.getElementById('signOutBtn');
+
+            if (state.isAuthenticated && state.user) {
+                // Authenticated state
+                authStatus.className = 'auth-badge authenticated';
+                authStatus.textContent = 'Authenticated';
+
+                userInfo.style.display = 'flex';
+                userInfo.textContent = state.user.primaryEmailAddress?.emailAddress || state.user.id;
+
+                signInBtn.style.display = 'none';
+                signOutBtn.style.display = 'block';
+            } else {
+                // Anonymous state
+                authStatus.className = 'auth-badge anonymous';
+                authStatus.textContent = 'Anonymous';
+
+                userInfo.style.display = 'none';
+
+                signInBtn.style.display = CONFIG.CLERK_PUBLISHABLE_KEY ? 'block' : 'none';
+                signOutBtn.style.display = 'none';
+            }
+        }
+
+        /**
+         * Handle sign in
+         */
+        async function handleSignIn() {
+            if (!state.clerk) {
+                showErrorBanner('Authentication not available. Please reload the page.');
+                return;
+            }
+
+            try {
+                await state.clerk.openSignIn();
+            } catch (error) {
+                console.error('Error opening sign in:', error);
+                showErrorBanner('Failed to open sign in dialog. Please try again.');
+            }
+        }
+
+        /**
+         * Handle sign out
+         */
+        async function handleSignOut() {
+            if (!state.clerk) {
+                return;
+            }
+
+            try {
+                await state.clerk.signOut();
+                state.user = null;
+                state.isAuthenticated = false;
+
+                // Generate new anonymous session ID
+                state.sessionId = getOrCreateSessionId();
+
+                updateAuthUI();
+                addMessage('system', 'Signed out successfully');
+            } catch (error) {
+                console.error('Error signing out:', error);
+                showErrorBanner('Failed to sign out. Please try again.');
+            }
+        }
+
+        /**
+         * Claim anonymous scans when user signs in
+         */
+        async function claimAnonymousScans() {
+            const sessionId = localStorage.getItem('session_id');
+
+            if (!sessionId) {
+                console.log('No anonymous scans to claim');
+                return;
+            }
+
+            if (!state.isAuthenticated) {
+                console.log('Cannot claim scans - not authenticated');
+                return;
+            }
+
+            try {
+                console.log('Claiming anonymous scans for session:', sessionId);
+
+                const headers = await buildHeaders();
+
+                const response = await fetch(`${CONFIG.API_BASE_URL}/scans/claim`, {
+                    method: 'POST',
+                    headers: headers,
+                    credentials: CONFIG.USE_COOKIES ? 'include' : 'same-origin',
+                    body: JSON.stringify({ session_id: sessionId })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                console.log('Successfully claimed scans:', data);
+
+                if (data.claimed_count > 0) {
+                    addMessage('system', `✓ Claimed ${data.claimed_count} previous scan(s)`);
+                    // Clear the old session ID
+                    localStorage.removeItem('session_id');
+                }
+
+            } catch (error) {
+                console.error('Error claiming scans:', error);
+                // Don't show error to user - this is a background operation
+            }
+        }
+
+        // ============================================================
+        // ERROR BANNER FUNCTIONS
+        // ============================================================
+
+        /**
+         * Show error banner with optional retry action
+         */
+        function showErrorBanner(message, retryAction = null) {
+            const banner = document.getElementById('errorBanner');
+            const text = document.getElementById('errorBannerText');
+            const retryBtn = document.getElementById('retryBtn');
+
+            text.textContent = message;
+            banner.classList.add('visible');
+
+            if (retryAction) {
+                state.lastFailedAction = retryAction;
+                retryBtn.style.display = 'block';
+            } else {
+                state.lastFailedAction = null;
+                retryBtn.style.display = 'none';
+            }
+        }
+
+        /**
+         * Dismiss error banner
+         */
+        function dismissErrorBanner() {
+            const banner = document.getElementById('errorBanner');
+            banner.classList.remove('visible');
+            state.lastFailedAction = null;
+        }
+
+        /**
+         * Retry last failed action
+         */
+        function retryLastAction() {
+            if (state.lastFailedAction) {
+                dismissErrorBanner();
+                state.lastFailedAction();
+            }
+        }
+
+        // ============================================================
+        // INITIALIZATION
+        // ============================================================
+
+        /**
+         * Initialize application on page load
+         */
+        document.addEventListener('DOMContentLoaded', async () => {
+            console.log('Page loaded, initializing...');
+
+            // Initialize session ID for anonymous users
+            state.sessionId = getOrCreateSessionId();
+
+            // Initialize Clerk authentication
+            await initializeClerk();
+
+            // Initialize Socket.io connection
             initializeSocket();
         });
     </script>
