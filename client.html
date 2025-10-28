@@ -581,6 +581,92 @@
         .btn-retry:hover {
             background: #5a161c;
         }
+
+        /* Clerk Configuration Styles */
+        .clerk-config {
+            margin-bottom: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .clerk-config-label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 8px;
+        }
+
+        .clerk-config-input-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        .clerk-config-input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #d0d0d0;
+            border-radius: 6px;
+            font-size: 13px;
+            font-family: monospace;
+        }
+
+        .clerk-config-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .clerk-config-input::placeholder {
+            color: #999;
+        }
+
+        .btn-save-clerk {
+            padding: 8px 16px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .btn-save-clerk:hover {
+            background: #5568d3;
+        }
+
+        .btn-save-clerk:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .clerk-config-hint {
+            font-size: 11px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .clerk-config-status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+
+        .clerk-config-status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .clerk-config-status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
     </style>
 </head>
 <body>
@@ -607,6 +693,27 @@
                     <button id="retryBtn" class="btn-retry" onclick="retryLastAction()" style="display: none;">Retry</button>
                     <button class="btn-close" onclick="dismissErrorBanner()">×</button>
                 </div>
+            </div>
+        </div>
+
+        <!-- Clerk Configuration -->
+        <div id="clerkConfig" class="clerk-config" style="display: none;">
+            <label class="clerk-config-label">
+                🔐 Clerk Publishable Key (Optional - for Authentication)
+                <span id="clerkConfigStatus" class="clerk-config-status" style="display: none;"></span>
+            </label>
+            <div class="clerk-config-input-group">
+                <input
+                    type="text"
+                    id="clerkKeyInput"
+                    class="clerk-config-input"
+                    placeholder="pk_test_... or pk_live_..."
+                    onkeypress="handleClerkKeyEnter(event)"
+                />
+                <button id="saveClerkBtn" class="btn-save-clerk" onclick="saveClerkKey()">Save & Enable Auth</button>
+            </div>
+            <div class="clerk-config-hint">
+                Leave empty to use anonymous mode only. Get your key from <a href="https://dashboard.clerk.com" target="_blank">Clerk Dashboard</a>
             </div>
         </div>
 
@@ -659,21 +766,41 @@
         // ============================================================
         // CONFIGURATION
         // ============================================================
+        //
+        // AUTO-DETECTION: URLs are automatically set based on the page origin
+        // - If client.html is served from https://example.com, API calls go to https://example.com/api
+        // - If client.html is served from http://localhost:8010, API calls go to http://localhost:8010/api
+        //
+        // OVERRIDE: For cross-origin setups, set window.APP_* globals before loading this script:
+        //   <script>
+        //     window.APP_API_BASE_URL = 'https://api.example.com/api';
+        //     window.APP_SOCKET_URL = 'https://api.example.com';
+        //     window.APP_CLERK_PUBLISHABLE_KEY = 'pk_test_...';
+        //   </script>
+        //
         const CONFIG = {
-            // API Configuration - can be overridden via window.APP_* globals
+            // API base URL - auto-detects from page origin (e.g., https://example.com/api)
             API_BASE_URL: window.APP_API_BASE_URL || (window.location.origin + '/api'),
+
+            // Socket.IO server URL - auto-detects from page origin (e.g., https://example.com)
             SOCKET_URL: window.APP_SOCKET_URL || window.location.origin,
+
+            // Socket.IO path - standard path, rarely needs changing
             SOCKET_PATH: window.APP_SOCKET_PATH || '/socket.io',
 
-            // Clerk Configuration
-            CLERK_PUBLISHABLE_KEY: window.APP_CLERK_PUBLISHABLE_KEY || '', // Set this via environment or window global
+            // Clerk publishable key - REQUIRED for authentication
+            // Priority: 1) window.APP_CLERK_PUBLISHABLE_KEY 2) localStorage 3) empty
+            // Can be set via UI input field
+            CLERK_PUBLISHABLE_KEY: window.APP_CLERK_PUBLISHABLE_KEY ||
+                                   localStorage.getItem('clerk_publishable_key') || '',
 
-            // Auth options
-            USE_COOKIES: false // Set true if backend uses cookie-based auth
+            // Cookie-based auth (set true if backend uses HTTP-only cookies)
+            USE_COOKIES: false
         };
 
-        console.log('Configured API Base URL:', CONFIG.API_BASE_URL);
-        console.log('Configured Socket URL:', CONFIG.SOCKET_URL);
+        console.log('🔗 API Base URL:', CONFIG.API_BASE_URL);
+        console.log('🔌 Socket URL:', CONFIG.SOCKET_URL);
+        console.log('🔐 Clerk enabled:', !!CONFIG.CLERK_PUBLISHABLE_KEY);
 
         // ============================================================
         // STATE MANAGEMENT
@@ -1340,12 +1467,107 @@
         // ============================================================
 
         /**
+         * Validate Clerk publishable key format
+         */
+        function isValidClerkKey(key) {
+            if (!key || typeof key !== 'string') return false;
+            return key.startsWith('pk_test_') || key.startsWith('pk_live_');
+        }
+
+        /**
+         * Save Clerk key from UI input
+         */
+        async function saveClerkKey() {
+            const input = document.getElementById('clerkKeyInput');
+            const saveBtn = document.getElementById('saveClerkBtn');
+            const statusEl = document.getElementById('clerkConfigStatus');
+            const key = input.value.trim();
+
+            // Validate key format
+            if (key && !isValidClerkKey(key)) {
+                statusEl.textContent = '✗ Invalid key format';
+                statusEl.className = 'clerk-config-status error';
+                statusEl.style.display = 'inline-block';
+                setTimeout(() => {
+                    statusEl.style.display = 'none';
+                }, 3000);
+                return;
+            }
+
+            // Save to localStorage
+            if (key) {
+                localStorage.setItem('clerk_publishable_key', key);
+                CONFIG.CLERK_PUBLISHABLE_KEY = key;
+                console.log('✅ Clerk key saved to localStorage');
+            } else {
+                localStorage.removeItem('clerk_publishable_key');
+                CONFIG.CLERK_PUBLISHABLE_KEY = '';
+                console.log('🗑️ Clerk key removed from localStorage');
+            }
+
+            // Show success status
+            statusEl.textContent = key ? '✓ Saved' : '✓ Removed';
+            statusEl.className = 'clerk-config-status success';
+            statusEl.style.display = 'inline-block';
+
+            // Disable button temporarily
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Initializing...';
+
+            // Initialize or re-initialize Clerk
+            await initializeClerk();
+
+            // Update UI
+            updateAuthUI();
+            updateClerkConfigUI();
+
+            // Re-enable button
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Save & Enable Auth';
+
+            // Hide status after 3 seconds
+            setTimeout(() => {
+                statusEl.style.display = 'none';
+            }, 3000);
+        }
+
+        /**
+         * Handle Enter key in Clerk input
+         */
+        function handleClerkKeyEnter(event) {
+            if (event.key === 'Enter') {
+                saveClerkKey();
+            }
+        }
+
+        /**
+         * Update Clerk configuration UI visibility
+         */
+        function updateClerkConfigUI() {
+            const configSection = document.getElementById('clerkConfig');
+            const keyInput = document.getElementById('clerkKeyInput');
+
+            // Show config section if no key is set via window variable
+            const hasWindowKey = !!window.APP_CLERK_PUBLISHABLE_KEY;
+            const shouldShowConfig = !hasWindowKey;
+
+            configSection.style.display = shouldShowConfig ? 'block' : 'none';
+
+            // Populate input with current stored key
+            if (shouldShowConfig) {
+                const storedKey = localStorage.getItem('clerk_publishable_key') || '';
+                keyInput.value = storedKey;
+            }
+        }
+
+        /**
          * Initialize Clerk authentication
          */
         async function initializeClerk() {
             if (!CONFIG.CLERK_PUBLISHABLE_KEY) {
                 console.warn('Clerk publishable key not configured. Authentication disabled.');
                 updateAuthUI(); // Update UI to show anonymous state
+                updateClerkConfigUI(); // Show config input
                 return;
             }
 
@@ -1358,9 +1580,11 @@
                     return;
                 }
 
-                // Initialize Clerk
-                state.clerk = new Clerk(CONFIG.CLERK_PUBLISHABLE_KEY);
-                await state.clerk.load();
+                // Initialize Clerk using CDN global pattern
+                state.clerk = window.Clerk;
+                await state.clerk.load({
+                    publishableKey: CONFIG.CLERK_PUBLISHABLE_KEY
+                });
 
                 console.log('Clerk initialized successfully');
 
@@ -1457,8 +1681,12 @@
                 state.user = null;
                 state.isAuthenticated = false;
 
-                // Generate new anonymous session ID
-                state.sessionId = getOrCreateSessionId();
+                // Generate fresh anonymous session ID (don't reuse old session)
+                localStorage.removeItem('session_id'); // Remove old session
+                const newSessionId = crypto.randomUUID(); // Generate fresh UUID
+                state.sessionId = newSessionId;
+                localStorage.setItem('session_id', newSessionId); // Persist new session
+                console.log('Generated new anonymous session:', newSessionId);
 
                 updateAuthUI();
                 addMessage('system', 'Signed out successfully');
@@ -1570,6 +1798,9 @@
 
             // Initialize session ID for anonymous users
             state.sessionId = getOrCreateSessionId();
+
+            // Show Clerk configuration UI if needed
+            updateClerkConfigUI();
 
             // Initialize Clerk authentication
             await initializeClerk();

@@ -27,6 +27,7 @@ from db import (
     create_scan,
     update_scan_status,
     upload_to_s3,
+    get_s3_presigned_url,
     S3_BUCKET_NAME
 )
 
@@ -73,6 +74,11 @@ class ScanProcessor:
             scan_id: UUID of the scan
             results: Scan results data
         """
+        # Generate presigned URL for immediate use in real-time updates
+        screenshot_url = get_s3_presigned_url(scan_id, 'screenshot.png', 3600)
+        if screenshot_url:
+            results['screenshot_url'] = screenshot_url
+
         if self.sio:
             await self.sio.emit('scan:completed', {
                 'scan_id': scan_id,
