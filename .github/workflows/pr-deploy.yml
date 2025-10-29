@@ -233,6 +233,33 @@ jobs:
             -var="pr_number=${{ github.event.pull_request.number }}" \
             -var="git_branch=${{ github.head_ref }}"
 
+      - name: Force new ECS deployment
+        working-directory: infra/environments/pr-template
+        env:
+          TF_WORKSPACE: ${{ env.TF_WORKSPACE_PREFIX }}-${{ github.event.pull_request.number }}
+        run: |
+          # Get the ECS cluster and service names from Terraform outputs
+          CLUSTER_NAME=$(terraform output -raw ecs_cluster_name 2>/dev/null || echo "")
+          SERVICE_NAME=$(terraform output -raw ecs_service_name 2>/dev/null || echo "")
+
+          if [ -n "$CLUSTER_NAME" ] && [ -n "$SERVICE_NAME" ]; then
+            echo "Forcing new deployment for ECS service..."
+            echo "Cluster: $CLUSTER_NAME"
+            echo "Service: $SERVICE_NAME"
+            echo ""
+
+            aws ecs update-service \
+              --cluster "$CLUSTER_NAME" \
+              --service "$SERVICE_NAME" \
+              --force-new-deployment \
+              --region ${{ env.AWS_REGION }}
+
+            echo ""
+            echo "✅ Force deployment triggered successfully"
+          else
+            echo "⚠️  ECS service not found or not yet created. Skipping force deployment."
+          fi
+
       - name: Wait for ECS deployment to complete
         working-directory: infra/environments/pr-template
         env:
