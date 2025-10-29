@@ -1,435 +1,454 @@
-# Frontend Integration Guide - Session ID Fix
+# Frontend Integration Guide
+## Backend API & WebSocket Documentation
 
-## What Changed?
-
-We fixed the "Access denied to this scan" error that occurred when anonymous users tried to view scan results in real-time.
-
-### The Problem
-Previously, the backend generated a new `session_id` for each scan, which didn't match the `session_id` from the Socket.io connection. This caused access control to fail when trying to join scan rooms.
-
-### The Solution
-The backend now accepts a `X-Session-ID` header when creating scans, allowing the frontend to use the same session ID from Socket.io authentication.
+**Last Updated:** 2025-01-28
+**Backend URL:** `https://api-prod.roboad.ai`
 
 ---
 
-## Required Frontend Changes
+## Table of Contents
 
-### 1. Update the Scan Creation API Call
+1. [System Architecture Overview](#system-architecture-overview)
+2. [Authentication](#authentication)
+3. [REST API Endpoints](#rest-api-endpoints)
+4. [WebSocket Events](#websocket-events)
+5. [Progressive Screenshot Loading](#progressive-screenshot-loading)
+6. [Complete Integration Example](#complete-integration-example)
+7. [Error Handling](#error-handling)
+8. [Best Practices](#best-practices)
 
-**Add `X-Session-ID` header to POST `/api/scans` requests for anonymous users.**
+---
 
-#### Before (Broken)
-```typescript
-async function createScan(url: string) {
-  const response = await fetch(`${API_BASE_URL}/api/scans`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ url })
-  });
+## System Architecture Overview
 
-  return await response.json();
-}
+### How It Works
+
+```
+┌─────────────┐         ┌─────────────┐         ┌─────────────┐
+│   Frontend  │         │   Backend   │         │     S3      │
+│             │         │   (API +    │         │  (Storage)  │
+│             │         │  WebSocket) │         │             │
+└─────────────┘         └─────────────┘         └─────────────┘
+       │                       │                       │
+       │ 1. Connect WS         │                       │
+       ├──────────────────────>│                       │
+       │    (auth event)       │                       │
+       │                       │                       │
+       │ 2. Create Scan        │                       │
+       ├──────────────────────>│                       │
+       │  POST /api/scans      │                       │
+       │                       │                       │
+       │<──────────────────────┤                       │
+       │   {scan_id, status}   │                       │
+       │                       │                       │
+       │ 3. Join Scan Room     │                       │
+       ├──────────────────────>│                       │
+       │   (join event)        │                       │
+       │                       │                       │
+       │<──────────────────────┤                       │
+       │  scan:progress (15%)  │                       │
+       │                       │                       │
+       │<──────────────────────┤                       │
+       │ scan:screenshot_loading│                      │
+       │                       │                       │
+       │<──────────────────────┤                       │
+       │ scan:progress (30%)   │                       │
+       │                       │                       │
+       │<──────────────────────┤ 4. Upload             │
+       │ scan:screenshot       │──────────────────────>│
+       │  (compressed JPEG)    │   screenshot.png      │
+       │                       │                       │
+       │<──────────────────────┤                       │
+       │ scan:progress (60%)   │                       │
+       │                       │                       │
+       │<──────────────────────┤                       │
+       │ scan:completed        │                       │
+       │  {screenshot_url,     │                       │
+       │   analysis, seo}      │                       │
+       │                       │                       │
+       │ 5. Display Results    │                       │
+       │                       │                       │
 ```
 
-#### After (Fixed)
-```typescript
-async function createScan(url: string, sessionId: string | null) {
-  const headers: Record<string, string> = {
+### Key Components
+
+1. **REST API**: Create scans, fetch scan details, get screenshot URLs
+2. **WebSocket (Socket.io)**: Real-time progress updates, progressive screenshot loading
+3. **S3 Storage**: Full-quality screenshots stored at `scans/{scan_id}/screenshot.png`
+
+---
+
+## Authentication
+
+The backend supports **two authentication modes**:
+
+### 1. Authenticated Users (Clerk JWT)
+
+For logged-in users, provide the Clerk JWT token in the `Authorization` header:
+
+```javascript
+// REST API
+fetch('https://api-prod.roboad.ai/api/scans', {
+  headers: {
+    'Authorization': `Bearer ${clerkToken}`,
     'Content-Type': 'application/json'
-  };
-
-  // Add session ID for anonymous users
-  if (sessionId) {
-    headers['X-Session-ID'] = sessionId;
   }
+})
 
-  const response = await fetch(`${API_BASE_URL}/api/scans`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ url })
-  });
-
-  return await response.json();
-}
+// Socket.io
+socket.emit('auth', {
+  token: clerkToken,
+  session_id: null  // Optional: can be null for authenticated users
+})
 ```
 
----
+### 2. Anonymous Users (Session ID)
 
-## Complete Integration Example
+For anonymous users, use a session ID in the `X-Session-ID` header:
 
-Here's a complete example showing how to integrate Socket.io authentication with scan creation:
+```javascript
+// Generate session ID once per browser session
+const sessionId = localStorage.getItem('session_id') || crypto.randomUUID();
+localStorage.setItem('session_id', sessionId);
 
-```typescript
-import { io, Socket } from 'socket.io-client';
-
-// 1. Initialize Socket.io connection
-const socket: Socket = io(API_BASE_URL, {
-  transports: ['websocket', 'polling'],
-  reconnection: true,
-  reconnectionDelay: 1000,
-  reconnectionAttempts: 5
-});
-
-// 2. Store the session ID received from authentication
-let currentSessionId: string | null = null;
-
-// 3. Listen for auth response to get session ID
-socket.on('auth_response', (data) => {
-  console.log('Auth response:', data);
-
-  if (data.authenticated) {
-    console.log('Authenticated as user:', data.user_id);
-    currentSessionId = null; // Authenticated users don't need session ID
-  } else {
-    console.log('Anonymous session created:', data.session_id);
-    currentSessionId = data.session_id; // Store this!
-  }
-});
-
-// 4. Send auth event on connection
-socket.on('connect', () => {
-  console.log('Socket.io connected');
-
-  // Send auth event (with token if authenticated, null if anonymous)
-  socket.emit('auth', {
-    token: null, // or getToken() for authenticated users
-    session_id: currentSessionId // Send existing session_id if reconnecting
-  });
-});
-
-// 5. Create scan with the session ID
-async function createScanWithSession(url: string) {
-  // Wait for auth to complete if needed
-  if (currentSessionId === null && !socket.connected) {
-    await new Promise((resolve) => {
-      socket.once('auth_response', resolve);
-    });
-  }
-
-  const headers: Record<string, string> = {
+// REST API
+fetch('https://api-prod.roboad.ai/api/scans', {
+  headers: {
+    'X-Session-ID': sessionId,
     'Content-Type': 'application/json'
-  };
-
-  // Add session ID header for anonymous users
-  if (currentSessionId) {
-    headers['X-Session-ID'] = currentSessionId;
   }
+})
 
-  const response = await fetch(`${API_BASE_URL}/api/scans`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ url })
-  });
+// Socket.io
+socket.emit('auth', {
+  token: null,
+  session_id: sessionId
+})
+```
 
-  if (!response.ok) {
-    throw new Error(`API request failed: ${response.status}`);
-  }
+### Session ID Management
 
-  const scanData = await response.json();
-  console.log('Scan created:', scanData);
+**IMPORTANT**: The session ID must be consistent across REST API and WebSocket calls:
 
-  // 6. Join the scan room to receive updates
-  socket.emit('join', { scan_id: scanData.scan_id });
+```javascript
+// ✅ CORRECT - Same session ID everywhere
+const sessionId = getOrCreateSessionId();
 
-  return scanData;
-}
+// Use in REST API
+headers: { 'X-Session-ID': sessionId }
 
-// 7. Listen for scan updates
-socket.on('scan:progress', (data) => {
-  console.log(`Scan ${data.scan_id}: ${data.percent}% - ${data.message}`);
-});
+// Use in Socket.io
+socket.emit('auth', { session_id: sessionId })
 
-socket.on('scan:completed', (data) => {
-  console.log('Scan completed:', data);
-});
-
-socket.on('scan:failed', (data) => {
-  console.error('Scan failed:', data.error);
-});
-
-socket.on('error', (data) => {
-  console.error('Socket.io error:', data.message);
-});
+// ❌ WRONG - Different session IDs
+// REST API uses session_id_1
+// Socket.io uses session_id_2
+// → Access denied! Backend sees them as different users
 ```
 
 ---
 
-## Step-by-Step Integration Guide
+## REST API Endpoints
 
-### Step 1: Initialize Socket.io Connection
+### 1. Create Scan
 
-```typescript
+**Endpoint:** `POST /api/scans`
+
+Creates a new scan and starts processing in the background.
+
+**Request:**
+```javascript
+POST /api/scans
+Headers:
+  - Authorization: Bearer {clerk_token}  (for authenticated users)
+  - X-Session-ID: {session_id}          (for anonymous users)
+  - Content-Type: application/json
+
+Body:
+{
+  "url": "https://example.com"
+}
+```
+
+**Response:**
+```json
+{
+  "scan_id": "aeeeb548-e1de-400c-9431-3847a8894327",
+  "website_id": "12345678-abcd-efgh-ijkl-123456789abc",
+  "url": "https://example.com",
+  "domain": "example.com",
+  "status": "pending",
+  "user_id": "user_2X...",
+  "session_id": "25d26ad3-a452-40ed-8fa1-57e9ca9e7209",
+  "created_at": "2025-01-28T12:34:56.789Z"
+}
+```
+
+---
+
+### 2. Get Scan Details
+
+**Endpoint:** `GET /api/scans/{scan_id}`
+
+Retrieves current scan status and results (if completed).
+
+**Response (Completed):**
+```json
+{
+  "scan_id": "aeeeb548-e1de-400c-9431-3847a8894327",
+  "url": "https://example.com",
+  "status": "completed",
+  "scan_data": {
+    "analysis": { ... },
+    "seo": { ... }
+  },
+  "screenshot_url": "https://s3.amazonaws.com/.../screenshot.png?X-Amz-...",
+  "processing_time_ms": 12456,
+  "created_at": "2025-01-28T12:34:56.789Z",
+  "completed_at": "2025-01-28T12:35:09.245Z"
+}
+```
+
+**Key Field:** `screenshot_url` - Presigned S3 URL (valid for 1 hour)
+
+---
+
+## WebSocket Events
+
+### Connection Setup
+
+```javascript
 import { io } from 'socket.io-client';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL!;
-const socket = io(API_BASE_URL);
-```
-
-### Step 2: Handle Socket.io Authentication
-
-```typescript
-let sessionId: string | null = null;
+const socket = io('https://api-prod.roboad.ai', {
+  transports: ['websocket', 'polling'],
+  reconnection: true
+});
 
 socket.on('connect', () => {
-  // Send auth event when connected
   socket.emit('auth', {
-    token: null,  // For anonymous users
-    session_id: sessionId  // null for first connection, reuse for reconnections
+    token: clerkToken || null,
+    session_id: sessionId || null
   });
 });
 
 socket.on('auth_response', (data) => {
-  if (!data.authenticated) {
-    // Store session ID for anonymous users
-    sessionId = data.session_id;
-    console.log('Session ID:', sessionId);
-  }
+  console.log('Authenticated:', data);
 });
 ```
-
-### Step 3: Create Scan with Session ID
-
-```typescript
-async function createScan(url: string) {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json'
-  };
-
-  if (sessionId) {
-    headers['X-Session-ID'] = sessionId;
-  }
-
-  const response = await fetch(`${API_BASE_URL}/api/scans`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ url })
-  });
-
-  return await response.json();
-}
-```
-
-### Step 4: Join Scan Room
-
-```typescript
-const scan = await createScan('https://example.com');
-
-// Join room to receive real-time updates
-socket.emit('join', { scan_id: scan.scan_id });
-```
-
-### Step 5: Listen for Updates
-
-```typescript
-socket.on('scan:progress', (data) => {
-  // Update UI with progress
-  updateProgress(data.percent, data.message);
-});
-
-socket.on('scan:completed', (data) => {
-  // Show results
-  displayResults(data.results);
-});
-```
-
-### Step 6: Fetching Scan Results (GET Request)
-
-⚠️ **CRITICAL**: When fetching scan data via GET request, anonymous users **MUST** include the `X-Session-ID` header!
-
-```typescript
-async function getScan(scanId: string) {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json'
-  };
-
-  // IMPORTANT: Include session ID for anonymous users
-  if (sessionId) {
-    headers['X-Session-ID'] = sessionId;
-  }
-
-  const response = await fetch(`${API_BASE_URL}/api/scans/${scanId}`, {
-    method: 'GET',
-    headers
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch scan: ${response.status}`);
-  }
-
-  return await response.json();
-}
-```
-
-**Why this is needed**: The backend verifies access control on ALL requests, not just when creating scans. Without the session ID, the backend returns `404 Not Found` because it can't verify you own the scan.
 
 ---
 
-## React Hook Example
+### Event: `scan:progress`
 
-Here's a React hook that handles everything:
+**Purpose:** Update progress bar and status message
 
-```typescript
-import { useEffect, useState, useRef } from 'react';
-import { io, Socket } from 'socket.io-client';
+**Timeline:**
+- `10%` - "Starting scan..."
+- `15%` - "Capturing screenshot..."
+- `30%` - "Screenshot captured successfully"
+- `60%` - "Website analysis complete"
+- `80%` - "Analyzing SEO..."
+- `100%` - "Scan complete!"
 
-export function useScanWebSocket() {
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const socketRef = useRef<Socket | null>(null);
+```javascript
+socket.on('scan:progress', (data) => {
+  // data = { scan_id, percent, message }
+  updateProgressBar(data.percent);
+  updateStatusMessage(data.message);
+});
+```
+
+---
+
+### Event: `scan:screenshot_loading` ⭐
+
+**Purpose:** Show loading skeleton for screenshot (~15% progress)
+
+```javascript
+socket.on('scan:screenshot_loading', (data) => {
+  // data = { scan_id }
+  setScreenshotLoading(true);
+});
+```
+
+---
+
+### Event: `scan:screenshot` ⭐ CRITICAL
+
+**Purpose:** Progressive loading - show compressed preview immediately (~30% progress)
+
+```javascript
+socket.on('scan:screenshot', (data) => {
+  // data = {
+  //   scan_id: string,
+  //   screenshot: string  // "data:image/jpeg;base64,/9j/4AAQ..."
+  // }
+
+  // Display compressed preview immediately
+  setScreenshotPreview(data.screenshot);
+  setScreenshotLoading(false);
+});
+```
+
+**Image Quality:**
+- Format: JPEG (compressed from PNG)
+- Max width: 800px (maintains aspect ratio)
+- Quality: 65% (optimized for fast transmission)
+- **Use case: Show to user while waiting for analysis results**
+
+---
+
+### Event: `scan:completed` ⭐ CRITICAL
+
+**Purpose:** Deliver final results and full-quality screenshot URL (100% progress)
+
+```javascript
+socket.on('scan:completed', (data) => {
+  // data = {
+  //   scan_id: string,
+  //   results: {
+  //     screenshot_url: string,  // Presigned S3 URL
+  //     analysis: { ... },
+  //     seo: { ... }
+  //   }
+  // }
+
+  // Replace preview with full-quality screenshot
+  setScreenshotUrl(data.results.screenshot_url);
+  setAnalysis(data.results.analysis);
+  setSeo(data.results.seo);
+});
+```
+
+---
+
+## Progressive Screenshot Loading
+
+### The Problem
+
+Users want to see **something visual** while waiting for analysis results. The scan takes 10-15 seconds, and showing just a progress bar is boring.
+
+### The Solution
+
+**Progressive Loading in 3 Stages:**
+
+```
+Stage 1: Loading Skeleton (0-30%)
+  ┌─────────────────────┐
+  │   ░░░░░░░░░░░░░░░   │  ← Animated skeleton
+  │   ░░░░░░░░░░░░░░░   │
+  └─────────────────────┘
+
+Stage 2: Compressed Preview (30-100%)
+  ┌─────────────────────┐
+  │ [Compressed JPEG]   │  ← Fast to load, lower quality
+  │  800px max width    │     Good enough to see the site
+  │  Quality: 65%       │
+  └─────────────────────┘
+
+Stage 3: Full Quality (After 100%)
+  ┌─────────────────────┐
+  │ [Full PNG from S3]  │  ← Original quality
+  │  Original size      │     Perfect quality
+  └─────────────────────┘
+```
+
+---
+
+### React Implementation
+
+```jsx
+import { useState, useEffect } from 'react';
+import { io } from 'socket.io-client';
+
+function ScanResults({ scanId }) {
+  // State management
+  const [progress, setProgress] = useState(0);
+  const [message, setMessage] = useState('');
+
+  // Screenshot stages
+  const [screenshotLoading, setScreenshotLoading] = useState(false);
+  const [screenshotPreview, setScreenshotPreview] = useState(null);  // Compressed JPEG
+  const [screenshotUrl, setScreenshotUrl] = useState(null);          // Full quality S3 URL
+
+  // Results
+  const [analysis, setAnalysis] = useState(null);
+  const [seo, setSeo] = useState(null);
 
   useEffect(() => {
-    const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL!;
-    const socket = io(API_BASE_URL);
-    socketRef.current = socket;
+    const socket = io('https://api-prod.roboad.ai');
 
+    // Authenticate
     socket.on('connect', () => {
-      setIsConnected(true);
       socket.emit('auth', {
-        token: null,
-        session_id: sessionId
+        token: clerkToken || null,
+        session_id: sessionId || null
       });
     });
 
-    socket.on('disconnect', () => {
-      setIsConnected(false);
-    });
-
-    socket.on('auth_response', (data) => {
-      if (!data.authenticated && data.session_id) {
-        setSessionId(data.session_id);
-      }
-    });
-
-    return () => {
-      socket.disconnect();
-    };
-  }, []);
-
-  const createScan = async (url: string) => {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json'
-    };
-
-    if (sessionId) {
-      headers['X-Session-ID'] = sessionId;
-    }
-
-    const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/scans`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ url })
-    });
-
-    if (!response.ok) {
-      throw new Error(`Scan creation failed: ${response.status}`);
-    }
-
-    const scan = await response.json();
-
     // Join scan room
-    socketRef.current?.emit('join', { scan_id: scan.scan_id });
-
-    return scan;
-  };
-
-  const getScan = async (scanId: string) => {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json'
-    };
-
-    // IMPORTANT: Include session ID for anonymous users
-    if (sessionId) {
-      headers['X-Session-ID'] = sessionId;
-    }
-
-    const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/scans/${scanId}`, {
-      method: 'GET',
-      headers
+    socket.on('auth_response', () => {
+      socket.emit('join', { scan_id: scanId });
     });
 
-    if (!response.ok) {
-      throw new Error(`Failed to fetch scan: ${response.status}`);
-    }
-
-    return await response.json();
-  };
-
-  const subscribeScanUpdates = (callbacks: {
-    onProgress?: (data: any) => void;
-    onCompleted?: (data: any) => void;
-    onFailed?: (data: any) => void;
-  }) => {
-    const socket = socketRef.current;
-    if (!socket) return;
-
-    if (callbacks.onProgress) {
-      socket.on('scan:progress', callbacks.onProgress);
-    }
-    if (callbacks.onCompleted) {
-      socket.on('scan:completed', callbacks.onCompleted);
-    }
-    if (callbacks.onFailed) {
-      socket.on('scan:failed', callbacks.onFailed);
-    }
-
-    return () => {
-      if (callbacks.onProgress) socket.off('scan:progress', callbacks.onProgress);
-      if (callbacks.onCompleted) socket.off('scan:completed', callbacks.onCompleted);
-      if (callbacks.onFailed) socket.off('scan:failed', callbacks.onFailed);
-    };
-  };
-
-  return {
-    isConnected,
-    sessionId,
-    createScan,
-    getScan,
-    subscribeScanUpdates,
-    socket: socketRef.current
-  };
-}
-```
-
-### Usage in Component
-
-```typescript
-function ScanPage() {
-  const { createScan, subscribeScanUpdates } = useScanWebSocket();
-  const [scanProgress, setScanProgress] = useState(0);
-  const [scanResults, setScanResults] = useState(null);
-
-  useEffect(() => {
-    const cleanup = subscribeScanUpdates({
-      onProgress: (data) => {
-        setScanProgress(data.percent);
-      },
-      onCompleted: (data) => {
-        setScanResults(data.results);
-      },
-      onFailed: (data) => {
-        console.error('Scan failed:', data.error);
-      }
+    // Listen for progress updates
+    socket.on('scan:progress', (data) => {
+      setProgress(data.percent);
+      setMessage(data.message);
     });
 
-    return cleanup;
-  }, [subscribeScanUpdates]);
+    // Stage 1: Show loading skeleton
+    socket.on('scan:screenshot_loading', () => {
+      setScreenshotLoading(true);
+    });
 
-  const handleSubmit = async (url: string) => {
-    try {
-      const scan = await createScan(url);
-      console.log('Scan started:', scan.scan_id);
-    } catch (error) {
-      console.error('Failed to create scan:', error);
-    }
-  };
+    // Stage 2: Show compressed preview ASAP
+    socket.on('scan:screenshot', (data) => {
+      setScreenshotPreview(data.screenshot);  // Base64 JPEG
+      setScreenshotLoading(false);
+    });
+
+    // Stage 3: Replace with full quality when done
+    socket.on('scan:completed', (data) => {
+      setScreenshotUrl(data.results.screenshot_url);  // S3 URL
+      setAnalysis(data.results.analysis);
+      setSeo(data.results.seo);
+      setProgress(100);
+    });
+
+    return () => socket.disconnect();
+  }, [scanId]);
 
   return (
-    <div>
-      <input type="url" onSubmit={(e) => handleSubmit(e.target.value)} />
-      {scanProgress > 0 && <Progress value={scanProgress} />}
-      {scanResults && <Results data={scanResults} />}
+    <div className="scan-results">
+      {/* Progress Bar */}
+      <ProgressBar value={progress} message={message} />
+
+      {/* Screenshot Display */}
+      <div className="screenshot-container">
+        {screenshotLoading && <ScreenshotSkeleton />}
+
+        {screenshotPreview && !screenshotUrl && (
+          <img
+            src={screenshotPreview}  // Stage 2: Compressed preview
+            alt="Website Preview"
+            className="screenshot-preview"
+          />
+        )}
+
+        {screenshotUrl && (
+          <img
+            src={screenshotUrl}  // Stage 3: Full quality
+            alt="Website Screenshot"
+            className="screenshot-full"
+          />
+        )}
+      </div>
+
+      {/* Results */}
+      {analysis && <AnalysisResults data={analysis} />}
+      {seo && <SeoResults data={seo} />}
     </div>
   );
 }
@@ -437,155 +456,281 @@ function ScanPage() {
 
 ---
 
-## Testing the Fix
+### Why 3 Stages?
 
-### 1. Test Anonymous User Flow
+**Stage 1: Loading Skeleton (0-30%)**
+- User knows something is happening
+- Size: 0 bytes (CSS animation)
+- Event: `scan:screenshot_loading`
 
-```typescript
-// 1. Open browser console
-// 2. Connect to Socket.io
-const socket = io('https://api-prod.roboad.ai');
+**Stage 2: Compressed Preview (30-100%)**
+- User can see the website while waiting
+- Size: ~50-100 KB (JPEG, 800px, 65% quality)
+- Event: `scan:screenshot`
+- **Benefit: Fast WebSocket transmission, good enough quality**
 
-// 3. Listen for auth response
-socket.on('auth_response', (data) => {
-  console.log('Session ID:', data.session_id);
-  window.testSessionId = data.session_id;
-});
+**Stage 3: Full Quality (100%+)**
+- Professional quality for final results
+- Size: ~200-500 KB (PNG, original dimensions)
+- Event: `scan:completed`
+- **Benefit: Perfect quality, loaded from S3 CDN**
 
-// 4. Send auth
-socket.emit('auth', { token: null, session_id: null });
+---
 
-// 5. Wait for auth_response, then create scan with session ID
-await fetch('https://api-prod.roboad.ai/api/scans', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'X-Session-ID': window.testSessionId
-  },
-  body: JSON.stringify({ url: 'https://example.com' })
-}).then(r => r.json()).then(console.log);
+## Complete Integration Example
 
-// 6. Join scan room (should work without errors!)
-socket.emit('join', { scan_id: '<scan_id_from_step_5>' });
+### Full Flow: Create Scan → Progressive Loading → Display Results
 
-// 7. Test GET request (MUST include session ID!)
-await fetch(`https://api-prod.roboad.ai/api/scans/<scan_id_from_step_5>`, {
-  headers: {
-    'X-Session-ID': window.testSessionId  // ← Without this, you get 404!
+```javascript
+import { io } from 'socket.io-client';
+
+class ScanManager {
+  constructor() {
+    this.socket = null;
+    this.sessionId = this.getOrCreateSessionId();
   }
-}).then(r => r.json()).then(console.log);
-```
 
-### 2. Verify No Access Denied Error
+  getOrCreateSessionId() {
+    let sessionId = localStorage.getItem('session_id');
+    if (!sessionId) {
+      sessionId = crypto.randomUUID();
+      localStorage.setItem('session_id', sessionId);
+    }
+    return sessionId;
+  }
 
-You should **NOT** see:
-```
-Socket.io error: { message: "Access denied to this scan" }
-```
+  getAuthHeaders(clerkToken) {
+    if (clerkToken) {
+      return { 'Authorization': `Bearer ${clerkToken}` };
+    } else {
+      return { 'X-Session-ID': this.sessionId };
+    }
+  }
 
-You **SHOULD** see:
-```
-{ scan_id: "...", room: "scan_..." }  // Joined successfully!
-```
+  async connectWebSocket(clerkToken) {
+    return new Promise((resolve, reject) => {
+      this.socket = io('https://api-prod.roboad.ai', {
+        transports: ['websocket', 'polling'],
+        reconnection: true
+      });
 
----
+      this.socket.on('connect', () => {
+        this.socket.emit('auth', {
+          token: clerkToken || null,
+          session_id: this.sessionId
+        });
+      });
 
-## API Endpoints Reference
+      this.socket.on('auth_response', (data) => {
+        console.log('WebSocket authenticated:', data);
+        resolve(data);
+      });
 
-### Production
-- **Base URL**: `https://api-prod.roboad.ai`
-- **Socket.io**: `wss://api-prod.roboad.ai/socket.io/`
+      this.socket.on('connect_error', reject);
+    });
+  }
 
-### Environment Variable
-```bash
-NEXT_PUBLIC_BACKEND_URL=https://api-prod.roboad.ai
-```
+  async createScan(url, clerkToken) {
+    const response = await fetch('https://api-prod.roboad.ai/api/scans', {
+      method: 'POST',
+      headers: {
+        ...this.getAuthHeaders(clerkToken),
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ url })
+    });
 
----
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to create scan');
+    }
 
-## Common Issues & Solutions
+    return await response.json();
+  }
 
-### Issue: Getting 404 "Scan not found or access denied" on GET requests
+  async joinScanRoom(scanId) {
+    return new Promise((resolve) => {
+      this.socket.emit('join', { scan_id: scanId });
+      this.socket.once('joined', resolve);
+    });
+  }
 
-**Symptom**:
-```
-GET /api/scans/5b3b9f19-3a73-472b-9d4a-ba57a07c21a1
-{"detail":"Scan not found or access denied"}
-```
+  listenForScanEvents(callbacks) {
+    this.socket.on('scan:progress', (data) => {
+      callbacks.onProgress?.(data.percent, data.message);
+    });
 
-**Root Cause**: Missing `X-Session-ID` header in GET request.
+    this.socket.on('scan:screenshot_loading', () => {
+      callbacks.onScreenshotLoading?.();
+    });
 
-**Solution**: Include session ID header on **ALL** API requests for anonymous users:
-```typescript
-// Both POST and GET need the header!
-const headers = {
-  'Content-Type': 'application/json',
-  'X-Session-ID': sessionId  // ← Required for GET too!
-};
+    this.socket.on('scan:screenshot', (data) => {
+      callbacks.onScreenshotPreview?.(data.screenshot);
+    });
 
-// Creating scan
-await fetch('/api/scans', { method: 'POST', headers, body: ... });
+    this.socket.on('scan:completed', (data) => {
+      callbacks.onCompleted?.(data.results);
+    });
 
-// Fetching scan - ALSO needs session ID!
-await fetch(`/api/scans/${scanId}`, { headers });
-```
+    this.socket.on('scan:failed', (data) => {
+      callbacks.onFailed?.(data.error);
+    });
+  }
 
-### Issue: Still getting "Access denied to this scan" on Socket.io
+  async startScan(url, clerkToken, callbacks) {
+    try {
+      await this.connectWebSocket(clerkToken);
+      const scan = await this.createScan(url, clerkToken);
+      await this.joinScanRoom(scan.scan_id);
+      this.listenForScanEvents(callbacks);
+      return scan.scan_id;
+    } catch (error) {
+      console.error('Error starting scan:', error);
+      callbacks.onError?.(error.message);
+      throw error;
+    }
+  }
 
-**Solution**: Make sure you're sending the `X-Session-ID` header when creating the scan:
-```typescript
-headers: {
-  'X-Session-ID': sessionId  // ← Must match Socket.io session_id!
+  disconnect() {
+    if (this.socket) this.socket.disconnect();
+  }
+}
+
+// Usage
+const scanManager = new ScanManager();
+
+async function scanWebsite(url) {
+  const clerkToken = await clerk.session?.getToken();
+
+  const scanId = await scanManager.startScan(url, clerkToken, {
+    onProgress: (percent, message) => {
+      updateProgressBar(percent);
+      updateStatusMessage(message);
+    },
+
+    onScreenshotLoading: () => {
+      showScreenshotSkeleton();
+    },
+
+    onScreenshotPreview: (screenshot) => {
+      displayScreenshotPreview(screenshot);  // Base64 JPEG
+    },
+
+    onCompleted: (results) => {
+      displayScreenshotFull(results.screenshot_url);  // S3 presigned URL
+      displayAnalysisResults(results.analysis);
+      displaySeoResults(results.seo);
+    },
+
+    onFailed: (error) => {
+      showErrorMessage(error);
+    }
+  });
+
+  console.log('Scan started:', scanId);
 }
 ```
 
-### Issue: Session ID is `null` or `undefined`
+---
 
-**Solution**: Wait for `auth_response` event before creating scans:
-```typescript
-await new Promise((resolve) => {
-  socket.once('auth_response', (data) => {
-    sessionId = data.session_id;
-    resolve();
-  });
-});
+## Error Handling
+
+### Common Errors
+
+#### 1. Session Mismatch (403)
+
+```javascript
+// ✅ CORRECT
+const sessionId = localStorage.getItem('session_id') || crypto.randomUUID();
+localStorage.setItem('session_id', sessionId);
+
+// Use everywhere
+socket.emit('auth', { session_id: sessionId });
+fetch('/api/scans', { headers: { 'X-Session-ID': sessionId } });
 ```
 
-### Issue: Not receiving scan updates
+#### 2. Expired Presigned URL
 
-**Solution**: Make sure to call `socket.emit('join', { scan_id })` after creating the scan:
-```typescript
-const scan = await createScan(url);
-socket.emit('join', { scan_id: scan.scan_id });  // ← Don't forget this!
+Presigned URLs expire after 1 hour. Refresh by calling:
+
+```javascript
+GET /api/scans/{scan_id}/screenshot-url
 ```
 
 ---
 
-## Summary of Changes
+## Best Practices
 
-### What the Frontend MUST Do:
+### ✅ DO
 
-1. ✅ Get `session_id` from Socket.io `auth_response` event
-2. ✅ Send `X-Session-ID` header when calling `POST /api/scans`
-3. ✅ Use the SAME session_id for both Socket.io and API calls
+1. **Store session ID persistently**
+```javascript
+const sessionId = localStorage.getItem('session_id') || crypto.randomUUID();
+localStorage.setItem('session_id', sessionId);
+```
 
-### What Happens Now:
+2. **Show all 3 stages**
+```javascript
+// Loading skeleton → Compressed preview → Full quality
+```
 
-1. ✅ Scan is created with the correct `session_id`
-2. ✅ Frontend can join the scan room (no more "Access denied")
-3. ✅ Frontend receives real-time progress updates
-4. ✅ Frontend gets scan completion notifications
+3. **Handle all errors**
+```javascript
+socket.on('scan:failed', handleError);
+socket.on('error', handleError);
+socket.on('connect_error', handleConnectionError);
+```
+
+4. **Clean up WebSocket connections**
+```javascript
+useEffect(() => {
+  const socket = io('...');
+  return () => socket.disconnect();
+}, []);
+```
+
+### ❌ DON'T
+
+1. **Generate new session ID every time**
+```javascript
+const sessionId = crypto.randomUUID();  // ❌ No persistence!
+```
+
+2. **Wait for full quality only**
+```javascript
+// ❌ Leaves users staring at blank space for 30 seconds
+```
+
+3. **Ignore errors**
+```javascript
+socket.on('scan:failed', () => {});  // ❌ User sees nothing!
+```
 
 ---
 
-## Questions?
+## Summary
 
-If you encounter any issues during integration, please check:
+### Quick Start Checklist
 
-1. Is `X-Session-ID` header being sent? (Check Network tab)
-2. Is the session_id the same in Socket.io and API call? (Check console logs)
-3. Are you calling `socket.emit('join')` after creating the scan?
+- [ ] Connect to WebSocket: `io('https://api-prod.roboad.ai')`
+- [ ] Authenticate: `socket.emit('auth', { token, session_id })`
+- [ ] Create scan: `POST /api/scans { url }`
+- [ ] Join scan room: `socket.emit('join', { scan_id })`
+- [ ] Listen for events: `scan:screenshot_loading`, `scan:screenshot`, `scan:completed`
+- [ ] Display 3 stages: skeleton → preview → full quality
+- [ ] Handle errors: `scan:failed`, `error`
+- [ ] Clean up: `socket.disconnect()`
 
-For additional help, contact the backend team or refer to:
-- `/docs/API_DOCUMENTATION.md` - Full API documentation
-- `/docs/AUTH_STRATEGY.md` - Authentication architecture
+### Key Takeaways
+
+1. **Use WebSocket for real-time updates** (don't poll!)
+2. **Progressive loading = better UX** (3 stages: skeleton → preview → full)
+3. **Session ID must be consistent** across REST and WebSocket
+4. **Presigned URLs expire** after 1 hour (refresh when needed)
+5. **Always handle errors** gracefully
+
+---
+
+**Questions?** Contact the backend team.
+
+**Last Updated:** 2025-01-28

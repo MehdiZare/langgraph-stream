@@ -78,9 +78,9 @@ resource "cloudflare_dns_record" "api_pr" {
   content = module.ecs_service.alb_dns_name
   type    = "CNAME"
   ttl     = 1  # Automatic TTL when proxied
-  proxied = true  # Enable Cloudflare proxy for SSL termination and Enterprise features
+  proxied = true  # Enable Cloudflare proxy for SSL termination and WebSocket (Enterprise plan required)
 
-  comment = "PR #${var.pr_number} environment - managed by Terraform"
+  comment = "PR #${var.pr_number} environment - managed by Terraform. WebSocket support via Cloudflare Enterprise."
 }
 
 # ============================================================================
@@ -128,9 +128,9 @@ module "ecs_service" {
   # CloudWatch (from shared workspace)
   cloudwatch_log_group_name = data.terraform_remote_state.shared.outputs.cloudwatch_log_group_name
 
-  # ALB - Using Cloudflare SSL, no ACM certificate needed
+  # ALB - Using Cloudflare SSL termination (no ACM certificate needed)
   alb_idle_timeout = var.alb_idle_timeout
-  certificate_arn  = ""  # Empty - using Cloudflare SSL termination
+  certificate_arn  = ""  # Empty - using Cloudflare Enterprise SSL termination
   domain_name      = "api-pr-${var.pr_number}.roboad.ai"
 
   # Auto Scaling - Disabled for PR environments

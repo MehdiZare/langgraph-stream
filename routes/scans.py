@@ -63,6 +63,7 @@ class GetScanResponse(BaseModel):
     user_id: Optional[str] = None
     session_id: Optional[str] = None
     scan_data: Optional[dict] = None
+    screenshot_url: Optional[str] = None
     error_message: Optional[str] = None
     processing_time_ms: Optional[int] = None
     created_at: str
@@ -123,7 +124,7 @@ def format_scan_response(scan: dict, website: Optional[dict] = None) -> dict:
     if not website and 'websites' in scan:
         website = scan['websites']
 
-    return {
+    formatted = {
         'scan_id': scan['id'],
         'website_id': scan['website_id'],
         'url': website['url'] if website else None,
@@ -137,6 +138,14 @@ def format_scan_response(scan: dict, website: Optional[dict] = None) -> dict:
         'created_at': scan['created_at'],
         'completed_at': scan.get('completed_at')
     }
+
+    # Add presigned screenshot URL for completed scans
+    if scan['status'] == 'completed':
+        screenshot_url = get_s3_presigned_url(scan['id'], 'screenshot.png', 3600)
+        if screenshot_url:
+            formatted['screenshot_url'] = screenshot_url
+
+    return formatted
 
 
 # API Endpoints

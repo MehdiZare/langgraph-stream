@@ -37,7 +37,8 @@
       "Bash(else cd scripts)",
       "Bash(./cleanup-pr-workspace.sh:*)",
       "Bash(fi)",
-      "Bash(aws logs tail:*)"
+      "Bash(aws logs tail:*)",
+      "Bash(aws ecr describe-images:*)"
     ],
     "deny": [],
     "ask": []
